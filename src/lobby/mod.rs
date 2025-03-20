@@ -177,6 +177,7 @@ pub struct Lobby {
     pub game_state: i32,
     pub first_betting_player: i32,
     pub game_type: i32,
+    pub community_cards: Arc<Mutex<Vec<i32>>>,
 }
 
 impl Lobby {
@@ -194,6 +195,7 @@ impl Lobby {
             first_betting_player: 0,
             game_db: SqlitePool::connect("sqlite://poker.db").await.unwrap(),
             game_type: NOT_SET,
+            community_cards: Arc::new(Mutex::new(Vec::new())),
         }
     }
 

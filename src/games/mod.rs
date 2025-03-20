@@ -2,6 +2,7 @@ use super::*;
 use crate::Deck;
 use crate::lobby::Lobby;
 use crate::Player;
+use futures::future::join_all;
 use futures_util::future::{ready, Join};
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -22,6 +23,9 @@ const SECOND_BETTING_ROUND: i32 = 6;
 const SHOWDOWN: i32 = 7;
 const END_OF_ROUND: i32 = 8;
 const UPDATE_DB: i32 = 9;
+const TURN_ROUND: i32 = 10;
+const FLOP_ROUND: i32 = 11;
+const RIVER_ROUND: i32 = 12;
 
 // Player state definitions
 pub const READY: i32 = 0;
@@ -48,6 +52,77 @@ pub const TEXAS_HOLD_EM: i32 = 12;
 pub const NOT_SET: i32 = 13;
 
 pub async fn deal_cards(lobby: &mut Lobby) {
+    match lobby.game_type {
+        FIVE_CARD_DRAW => deal_cards_5(lobby).await,
+        //needs to implement the round checks
+        SEVEN_CARD_STUD => deal_cards_7(lobby, 0).await,
+        TEXAS_HOLD_EM => deal_cards_texas(lobby).await,
+        _ => println!("Invalid game type."),
+    }
+}
+
+async fn deal_cards_texas(lobby: &mut Lobby) {
+    let mut players = lobby.players.lock().await;
+    for _ in 0..2 {
+        for player in players.iter_mut() {
+            if player.state != FOLDED {
+                player.hand.push(lobby.deck.deal());
+            }
+        }
+    }
+    // print the hands to the players
+    let players_tx = players
+        .iter()
+        .filter(|p| p.state != FOLDED)
+        .map(|p| p.tx.clone())
+        .collect::<Vec<_>>(); // get all tx's
+    let players_hands = players
+        .iter()
+        .filter(|p| p.state != FOLDED)
+        .map(|p| p.hand.clone())
+        .collect::<Vec<_>>(); // get all hands
+    display_hand(players_tx.clone(), players_hands.clone()).await;
+}
+
+//how i wanna design this is the we will figure out if this is the first dealing card round where then we need to 
+//give each players 2 face down and 1 face up card , and this is done by setting up each card dealt with a type 
+//face down or face up and then we can we will deal a face up card normally unless its the very last dealing card 
+//round which then we will give 1 face down card and we will show the face up cards to the user by doing if statements against 
+//the type of each card to check if it is face up or face down and if its face up append the card into the list if it is face down 
+//we append a string "X"
+async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
+    let mut players = lobby.players.lock().await;
+
+    for player in players.iter_mut() {
+        if player.state != FOLDED {
+            let card = lobby.deck.deal();
+            let card_value = if round == 0 {
+                // First two cards face-down, third card face-up
+                if player.hand.len() < 2 {
+                    card + 53 // First two cards are face-down
+                } else {
+                    card // Third card is face-up
+                }
+            } else if round == 6 {
+                card + 53 // Last card is face-down
+            } else {
+                card // All other rounds are face-up
+            };
+
+            player.hand.push(card_value);
+        }
+    }
+
+    // Get active players
+    let active_players: Vec<_> = players.iter().filter(|p| p.state != FOLDED).collect();
+    let players_tx: Vec<_> = active_players.iter().map(|p| p.tx.clone()).collect();
+    let players_hands: Vec<_> = active_players.iter().map(|p| p.hand.clone()).collect();
+
+    // Display hands to players
+    display_hand(players_tx, players_hands).await;
+}
+
+async fn deal_cards_5(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     for _ in 0..5 {
         for player in players.iter_mut() {
@@ -68,6 +143,31 @@ pub async fn deal_cards(lobby: &mut Lobby) {
         .map(|p| p.hand.clone())
         .collect::<Vec<_>>(); // get all hands
     display_hand(players_tx.clone(), players_hands.clone()).await;
+}
+
+//Dealing the community cards for the texas hold em game
+//for flop round we will draw 3 cards for all users to see
+//for turn round we will draw 1 card for all users to see
+//for river round we will draw 1 card for all users to see
+pub async fn deal_server_cards(lobby: &mut Lobby) {
+    let mut community_cards = lobby.community_cards.lock().await;
+    match lobby.game_state {
+        FLOP_ROUND => {
+            for _ in 0..3 {
+                community_cards.push(lobby.deck.deal());
+            }
+        }
+        TURN_ROUND => {
+            community_cards.push(lobby.deck.deal());
+        }
+        RIVER_ROUND => {
+            community_cards.push(lobby.deck.deal());
+        }
+        _ => {
+            println!("Invalid game state: {}", lobby.game_state);
+        }
+    }
+
 }
 
 pub async fn betting_round(lobby: &mut Lobby, round: i32) {
@@ -533,6 +633,18 @@ pub async fn showdown(lobby: &mut Lobby) {
 }
 
 pub async fn translate_card(card: i32) -> String {
+    //if card is greater than 52 during the very final round of 7 card stud which is the showdown round
+    //We will do card -53 to get the actual card value else if it is not that round yet we will just display X
+    // if lobby.game_state == SHOWDOWN {
+    //     if card > 52 {
+    //         card -= 53;
+    //     }
+    // }
+        if card > 52 {
+            return "X".to_string(); // Face-down card
+        }
+
+
     let mut cardStr: String = Default::default();
     let rank: i32 = card % 13;
 
