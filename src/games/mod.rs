@@ -16,9 +16,11 @@ pub const JOINABLE: i32 = 0;
 pub const START_OF_ROUND: i32 = 1;
 const ANTE: i32 = 2;
 const DEAL_CARDS: i32 = 3;
-const FIRST_BETTING_ROUND: i32 = 4;
+const FIRST_BETTING_ROUND: i32 = 14;
+const SECOND_BETTING_ROUND: i32 = 15;
+const BETTING_ROUND: i32 = 16;
 const DRAW: i32 = 5;
-const SECOND_BETTING_ROUND: i32 = 6;
+
 const SHOWDOWN: i32 = 7;
 const END_OF_ROUND: i32 = 8;
 const UPDATE_DB: i32 = 9;
@@ -70,14 +72,28 @@ pub async fn deal_cards(lobby: &mut Lobby) {
     display_hand(players_tx.clone(), players_hands.clone()).await;
 }
 
-pub async fn betting_round(lobby: &mut Lobby, round: i32) {
+pub async fn ante(lobby: &mut Lobby) {
+    let mut players = lobby.players.lock().await;
+    for player in players.iter_mut() {
+        if player.wallet > 10 {
+            println!("player {} reached here -------",player.name);
+            println!("Player {} antes 10.", player.name);
+            lobby.pot += 10;
+            player.wallet -= 10;
+            player.games_played += 1;
+        } else {
+            player.state = FOLDED; // these guys cant play, spectator basically
+        }
+    }
+    return;
+}
+pub async fn betting_round(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     if players.len() == 1 {
         // only one player left, move on
         return;
     }
     let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-    println!("Current round: {}", round);
     // ensure all players have current_bet set to 0
 
     let mut current_player_index = lobby.first_betting_player;
@@ -91,25 +107,6 @@ pub async fn betting_round(lobby: &mut Lobby, round: i32) {
             folded_count += 1;
         }
     }
-
-    if round == ANTE {
-        for player in players.iter_mut() {
-            if player.wallet > 10 {
-                println!(
-                    "player {} reached here -----------------------------",
-                    player.name
-                );
-                println!("Player {} antes 10.", player.name);
-                lobby.pot += 10;
-                player.wallet -= 10;
-                player.games_played += 1;
-            } else {
-                player.state = FOLDED; // these guys cant play, spectator basically
-            }
-        }
-        return;
-    }
-
     for player in players.iter_mut() {
         player.current_bet = 0; // reset all players to 0
     }
@@ -582,85 +579,6 @@ pub async fn display_hand(players_tx: Vec<UnboundedSender<Message>>, players_han
     }
 }
 
-pub async fn game_state_machine(lobby: &mut Lobby) {
-    loop {
-        match lobby.game_state {
-            START_OF_ROUND => {
-                lobby.first_betting_player =
-                    (lobby.first_betting_player + 1) % lobby.current_player_count;
-                lobby.game_state = ANTE;
-            }
-            ANTE => {
-                lobby
-                    .broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string())
-                    .await;
-                betting_round(lobby, ANTE).await;
-                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
-                lobby.game_state = DEAL_CARDS;
-            }
-            DEAL_CARDS => {
-                lobby.broadcast("Dealing cards...".to_string()).await;
-                lobby.deck.shuffle(); // shuffle card deck
-                deal_cards(lobby).await; // deal and display each players hands to them
-                lobby.game_state = FIRST_BETTING_ROUND;
-            }
-            FIRST_BETTING_ROUND => {
-                lobby
-                    .broadcast("------First betting round!------".to_string())
-                    .await;
-                betting_round(lobby, FIRST_BETTING_ROUND).await;
-                if lobby.game_state == SHOWDOWN {
-                    continue;
-                } else {
-                    lobby.game_state = DRAW;
-                    lobby
-                        .broadcast(format!(
-                            "First betting round complete!\nCurrent pot: {}",
-                            lobby.pot
-                        ))
-                        .await;
-                }
-            }
-            DRAW => {
-                lobby
-                    .broadcast("------Drawing round!------".to_string())
-                    .await;
-                drawing_round(lobby).await;
-                lobby.game_state = SECOND_BETTING_ROUND;
-            }
-            SECOND_BETTING_ROUND => {
-                lobby.broadcast("Second betting round!".to_string()).await;
-                betting_round(lobby, SECOND_BETTING_ROUND).await;
-                lobby
-                    .broadcast(format!(
-                        "Second betting round complete!\nCurrent pot: {}",
-                        lobby.pot
-                    ))
-                    .await;
-                lobby.game_state = SHOWDOWN;
-            }
-            SHOWDOWN => {
-                lobby
-                    .broadcast("------Showdown Round!------".to_string())
-                    .await;
-                showdown(lobby).await;
-                lobby.game_state = END_OF_ROUND;
-            }
-            END_OF_ROUND => {
-                lobby.game_state = UPDATE_DB;
-            }
-            UPDATE_DB => {
-                lobby.pot = 0;
-                lobby.update_db().await;
-                break;
-            }
-            _ => {
-                panic!("Invalid game state: {}", lobby.game_state);
-            }
-        }
-    }
-}
-
 fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 5);
 
@@ -768,3 +686,136 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     // High card
     (1, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
 }
+
+pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
+    loop {
+        match lobby.game_state {
+            START_OF_ROUND => {
+                lobby.first_betting_player =(lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.game_state = ANTE;
+            }
+            ANTE => {
+                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
+                ante(lobby).await;
+                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
+                lobby.game_state = DEAL_CARDS;
+            }
+            DEAL_CARDS => {
+                lobby.broadcast("Dealing cards...".to_string()).await;
+                lobby.deck.shuffle(); // shuffle card deck
+                deal_cards(lobby).await; // deal and display each players hands to them
+                lobby.game_state = FIRST_BETTING_ROUND;
+            }
+            FIRST_BETTING_ROUND => {
+                lobby.broadcast("------First betting round!------".to_string()).await;
+                betting_round(lobby).await;
+                if lobby.game_state == SHOWDOWN {
+                    continue;
+                } else {
+                    lobby.game_state = DRAW;
+                    lobby.broadcast(format!("First betting round complete!\nCurrent pot: {}",lobby.pot)).await;
+                }
+            }
+            DRAW => {
+                lobby.broadcast("------Drawing round!------".to_string()).await;
+                drawing_round(lobby).await;
+                lobby.game_state = SECOND_BETTING_ROUND;
+            }
+            SECOND_BETTING_ROUND => {
+                lobby.broadcast("Second betting round!".to_string()).await;
+                betting_round(lobby).await;
+                lobby.broadcast(format!("Second betting round complete!\nCurrent pot: {}",lobby.pot)).await;
+                lobby.game_state = SHOWDOWN;
+            }
+            SHOWDOWN => {
+                lobby.broadcast("------Showdown Round!------".to_string()).await;
+                showdown(lobby).await;
+                lobby.game_state = END_OF_ROUND;
+            }
+            END_OF_ROUND => {
+                lobby.game_state = UPDATE_DB;
+            }
+            UPDATE_DB => {
+                lobby.pot = 0;
+                lobby.update_db().await;
+                break;
+            }
+            _ => {
+                panic!("Invalid game state: {}", lobby.game_state);
+            }
+        }
+    }
+}
+
+pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
+    let mut betting_round_count = 1;
+    let mut deal_card_counter = 1;
+    loop {
+        match lobby.game_state {
+            START_OF_ROUND => {
+                lobby.first_betting_player =(lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.game_state = ANTE;
+            }
+            ANTE => {
+                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
+                betting_round(lobby).await;
+                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
+                lobby.game_state = DEAL_CARDS;
+            }
+            DEAL_CARDS => {
+                lobby.broadcast("Dealing cards...".to_string()).await;
+                if deal_card_counter == 1 {
+                    lobby.deck.shuffle(); // shuffle card deck
+                    deal_cards(lobby).await; // deal first 2 face down then deal 3rd face up
+                }
+                else if deal_card_counter == 5 {
+                    deal_cards(lobby).await; // deal last card face down
+                }
+                else {
+                    deal_cards(lobby).await; // deal 1 face up card
+                }
+                lobby.game_state = BETTING_ROUND;
+                if deal_card_counter != 5 {
+                    deal_card_counter += 1;
+                }
+            }
+            BETTING_ROUND => {
+                lobby.broadcast(format!("------{}st betting round!------", betting_round_count)).await;
+                betting_round(lobby).await;
+                if lobby.game_state == SHOWDOWN {
+                    continue;
+                } else {
+                    lobby.game_state = DEAL_CARDS;
+                    lobby.broadcast(format!("{} betting round complete!\nCurrent pot: {}", betting_round_count, lobby.pot)).await;
+                }
+                if betting_round_count == 5  && deal_card_counter == 5 {
+                    lobby.game_state = SHOWDOWN;
+                    continue;
+                }
+                betting_round_count += 1;
+            }
+            SHOWDOWN => {
+                lobby.broadcast("------Showdown Round!------".to_string()).await;
+                // change to 7 card showdown
+                showdown(lobby).await;
+                lobby.game_state = END_OF_ROUND;
+            }
+            END_OF_ROUND => {
+                lobby.game_state = UPDATE_DB;
+            }
+            UPDATE_DB => {
+                lobby.pot = 0;
+                lobby.update_db().await;
+                break;
+            }
+            _ => {
+                panic!("Invalid game state: {}", lobby.game_state);
+            }
+        }
+    }
+}
+
+pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
+    
+}
+

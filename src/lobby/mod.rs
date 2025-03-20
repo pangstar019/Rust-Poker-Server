@@ -372,13 +372,13 @@ impl Lobby {
         self.change_player_state(IN_GAME).await;
     
         if self.game_type == FIVE_CARD_DRAW {
-            games::game_state_machine(self).await;
+            games::five_card_game_state_machine(self).await;
         }
         // call different game state machine (not done yet)
         else if self.game_type == SEVEN_CARD_STUD {
-            games::game_state_machine(self).await;
+            games::seven_card_game_state_machine(self).await;
         } else {
-            games::game_state_machine(self).await;
+            games::texas_holdem_game_state_machine(self).await;
         }
     
         self.game_state = JOINABLE;
