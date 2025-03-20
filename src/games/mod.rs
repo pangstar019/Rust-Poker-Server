@@ -21,6 +21,7 @@ const FIRST_BETTING_ROUND: i32 = 14;
 const SECOND_BETTING_ROUND: i32 = 15;
 const BETTING_ROUND: i32 = 16;
 const DRAW: i32 = 5;
+const BRING_IN: i32 = 50;
 
 const SHOWDOWN: i32 = 7;
 const END_OF_ROUND: i32 = 8;
@@ -195,6 +196,32 @@ pub async fn ante(lobby: &mut Lobby) {
     }
     return;
 }
+
+//This is the bring in bet for seven card draw and the rule for this is
+//The player with the lowest-ranking up-card pays the bring-in, and betting proceeds after that in normal clockwise order
+// and to break ties in card ranks we will use the suit order of spades, hearts, diamonds, and clubs
+pub async fn bring_in(lobby: &mut Lobby) {
+    let mut players = lobby.players.lock().await;
+    let mut lowest_up_card = 14;
+    let mut lowest_up_card_player = 0;
+    for (i, player) in players.iter().enumerate() {
+        if player.state != FOLDED {
+            if player.hand[2] % 13 < lowest_up_card {
+                lowest_up_card = player.hand[2] % 13;
+                lowest_up_card_player = i;
+            }
+        }
+    }
+    let bring_in = 10;
+    players[lowest_up_card_player].wallet -= bring_in;
+    players[lowest_up_card_player].current_bet += bring_in;
+    lobby.pot += bring_in;
+    players[lowest_up_card_player].state = CALLED;
+    let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+    lobby.lobby_wide_send(players_tx, format!("{} has the lowest up card and pays the bring-in of {}", players[lowest_up_card_player].name, bring_in)).await;
+
+}
+
 pub async fn betting_round(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     if players.len() == 1 {
@@ -874,25 +901,27 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
         match lobby.game_state {
             START_OF_ROUND => {
                 lobby.first_betting_player =(lobby.first_betting_player + 1) % lobby.current_player_count;
-                lobby.game_state = ANTE;
-            }
-            ANTE => {
-                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
-                ante(lobby).await;
-                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
                 lobby.game_state = DEAL_CARDS;
             }
+
             DEAL_CARDS => {
                 lobby.broadcast("Dealing cards...".to_string()).await;
                 if deal_card_counter == 1 {
                     lobby.deck.shuffle(); // shuffle card deck
                 }
                 deal_cards_7(lobby, deal_card_counter).await; // deal first 2 face down then deal 3rd face up
-                lobby.game_state = BETTING_ROUND;
+                lobby.game_state = BRING_IN;
                 if deal_card_counter != 5 {
                     deal_card_counter += 1;
                 }
             }
+            BRING_IN => {
+                lobby.broadcast("Bring In stage".to_string()).await;
+                bring_in(lobby).await;
+                lobby.game_state = BETTING_ROUND;
+                
+            }
+
             BETTING_ROUND => {
                 lobby.broadcast(format!("------{}st betting round!------", betting_round_count)).await;
                 betting_round(lobby).await;
