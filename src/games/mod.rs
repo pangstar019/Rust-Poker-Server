@@ -92,24 +92,34 @@ async fn deal_cards_texas(lobby: &mut Lobby) {
 //we append a string "X"
 async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
     let mut players = lobby.players.lock().await;
-
+    let mut count = 0;
     for player in players.iter_mut() {
-        if player.state != FOLDED {
-            let card = lobby.deck.deal();
-            let card_value = if round == 0 {
-                // First two cards face-down, third card face-up
-                if player.hand.len() < 2 {
-                    card + 53 // First two cards are face-down
+        count = 0;
+        loop {
+            if player.state != FOLDED {
+                let card = lobby.deck.deal();
+                let card_value = if round == 1 {
+                    // First two cards face-down, third card face-up
+                    if player.hand.len() < 2 {
+                        card + 53 // First two cards are face-down
+                    } else {
+                        card // Third card is face-up
+                    }
+                } else if round == 5 {
+                    card + 53 // Last card is face-down
                 } else {
-                    card // Third card is face-up
-                }
-            } else if round == 6 {
-                card + 53 // Last card is face-down
-            } else {
-                card // All other rounds are face-up
-            };
+                    card // All other rounds are face-up
+                };
 
-            player.hand.push(card_value);
+                player.hand.push(card_value);
+                if round == 1 {
+                    count += 1;
+                    if count == 3 {
+                        break;
+                    }
+                }
+                else {break}
+            }
         }
     }
 
@@ -868,7 +878,7 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
             }
             ANTE => {
                 lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
-                betting_round(lobby).await;
+                ante(lobby).await;
                 lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
                 lobby.game_state = DEAL_CARDS;
             }
@@ -876,14 +886,8 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
                 lobby.broadcast("Dealing cards...".to_string()).await;
                 if deal_card_counter == 1 {
                     lobby.deck.shuffle(); // shuffle card deck
-                    deal_cards(lobby).await; // deal first 2 face down then deal 3rd face up
                 }
-                else if deal_card_counter == 5 {
-                    deal_cards(lobby).await; // deal last card face down
-                }
-                else {
-                    deal_cards(lobby).await; // deal 1 face up card
-                }
+                deal_cards_7(lobby, deal_card_counter).await; // deal first 2 face down then deal 3rd face up
                 lobby.game_state = BETTING_ROUND;
                 if deal_card_counter != 5 {
                     deal_card_counter += 1;
