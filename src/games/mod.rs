@@ -21,6 +21,7 @@ const FIRST_BETTING_ROUND: i32 = 14;
 const SECOND_BETTING_ROUND: i32 = 15;
 const BETTING_ROUND: i32 = 16;
 const DRAW: i32 = 5;
+const BRING_IN: i32 = 50;
 
 const SHOWDOWN: i32 = 7;
 const END_OF_ROUND: i32 = 8;
@@ -195,6 +196,32 @@ pub async fn ante(lobby: &mut Lobby) {
     }
     return;
 }
+
+//This is the bring in bet for seven card draw and the rule for this is
+//The player with the lowest-ranking up-card pays the bring-in, and betting proceeds after that in normal clockwise order
+// and to break ties in card ranks we will use the suit order of spades, hearts, diamonds, and clubs
+pub async fn bring_in(lobby: &mut Lobby) {
+    let mut players = lobby.players.lock().await;
+    let mut lowest_up_card = 14;
+    let mut lowest_up_card_player = 0;
+    for (i, player) in players.iter().enumerate() {
+        if player.state != FOLDED {
+            if player.hand[2] % 13 < lowest_up_card {
+                lowest_up_card = player.hand[2] % 13;
+                lowest_up_card_player = i;
+            }
+        }
+    }
+    let bring_in = 10;
+    players[lowest_up_card_player].wallet -= bring_in;
+    players[lowest_up_card_player].current_bet += bring_in;
+    lobby.pot += bring_in;
+    players[lowest_up_card_player].state = CALLED;
+    let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+    lobby.lobby_wide_send(players_tx, format!("{} has the lowest up card and pays the bring-in of {}", players[lowest_up_card_player].name, bring_in)).await;
+
+}
+
 pub async fn betting_round(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     if players.len() == 1 {
@@ -601,12 +628,18 @@ pub async fn showdown(lobby: &mut Lobby) {
     let mut winning_players_names: Vec<String> = Vec::new();
     let mut winning_hand = (0, 0, 0, 0, 0, 0); // keeps track of current highest hand, could change when incrementing between players
     let mut winning_players_indices: Vec<i32> = Vec::new();
+    let mut player_hand_type: (i32, i32, i32, i32, i32, i32);
     for player in players.iter_mut() {
         if player.state == FOLDED {
             continue;
         };
         let player_hand = player.hand.clone();
-        let player_hand_type = get_hand_type(&player_hand);
+        if lobby.game_type == SEVEN_CARD_STUD {
+            player_hand_type = (player.hand[0], player.hand[1], player.hand[2], player.hand[3], player.hand[4], player.hand[5]);
+        }
+        else {
+            player_hand_type = get_hand_type(&player_hand);
+        }
         if player_hand_type.0 > winning_hand.0
             || (player_hand_type.0 == winning_hand.0 && player_hand_type.1 > winning_hand.1)
         {
@@ -640,11 +673,8 @@ pub async fn showdown(lobby: &mut Lobby) {
 pub async fn translate_card(card: i32) -> String {
     //if card is greater than 52 during the very final round of 7 card stud which is the showdown round
     //We will do card -53 to get the actual card value else if it is not that round yet we will just display X
-    // if lobby.game_state == SHOWDOWN {
-    //     if card > 52 {
-    //         card -= 53;
-    //     }
-    // }
+        // let mut card_clone = card.clone();
+        
         if card > 52 {
             return "X".to_string(); // Face-down card
         }
@@ -702,10 +732,9 @@ pub async fn display_hand(players_tx: Vec<UnboundedSender<Message>>, players_han
 // for 7 card stud, we will need to determine the best hand out of the 7 cards
 fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 7);
-
-    let mut best_hand = (0, 0, 0, 0, 0, 0);
-    let mut best_hand_type = 0;
-
+    println!("Hand: {:?}", hand);
+    let mut best_hand = (-1, -1, -1, -1, -1, -1);
+    let mut best_hand_type = -1;
     for i in 0..=2 {
         for j in (i + 1)..=3 {
             for k in (j + 1)..=4 {
@@ -723,6 +752,7 @@ fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
             }
         }
     }
+    println!("Best hand: {:?}", best_hand);
     best_hand
     
 }
@@ -835,34 +865,29 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     (1, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
 }
 
-pub async fn determine_lowest_card_player(lobby: &Lobby) -> String{
-    let mut players = lobby.players.lock().await;
-    let mut lowest_card = 100;
-    let mut lowest_card_player = String::new();
-    for player in players.iter_mut() {
-        let player_hand = player.hand.clone();
-        for card in player_hand.iter() {
-            if *card < lowest_card {
-                lowest_card = *card;
-                lowest_card_player = player.name.clone();
-            }
-        }
-    }
-
-    return lowest_card_player;
-}
-
 pub async fn update_players_hand(lobby: &Lobby) {
     let mut players = lobby.players.lock().await;
     for player in players.iter_mut() {
         if player.state == FOLDED {
             continue;
         }
+        // println!("Player hand before update {} hand: {:?}", player.name, player.hand);
         let player_hand = player.hand.clone();
+        
+        let mut translated_cards: String = Default::default();
+        for (count, card) in player.hand.iter().enumerate() {
+            translated_cards.push_str(&format!("{}. ", count + 1));
+            translated_cards.push_str(translate_card(*card).await.as_str());
+            translated_cards.push_str("\n");
+        }
+        // println!("Player {} hand:\n{}", player.name, translated_cards.trim_end_matches(", "));
+        
         let best_hand = get_best_hand(&player_hand);
         player.hand = vec![best_hand.0, best_hand.1, best_hand.2, best_hand.3, best_hand.4, best_hand.5];
+        // println!("Player hand updated {} hand: {:?}", player.name, player.hand);
     }
 }
+
 pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
     loop {
         match lobby.game_state {
@@ -922,7 +947,20 @@ pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
         }
     }
 }
-
+pub async fn get_rid_of_x(lobby: &Lobby) {
+    let mut players = lobby.players.lock().await;
+    for player in players.iter_mut() {
+        if player.state == FOLDED {
+            continue;
+        }
+        for card in player.hand.iter_mut() {
+            if *card > 52 {
+                *card -= 53;
+            }
+        }
+        display_hand(vec![player.tx.clone()], vec![player.hand.clone()]).await;
+    }
+}
 pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
     let mut betting_round_count = 1;
     let mut deal_card_counter = 1;
@@ -936,51 +974,46 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
                 lobby.broadcast("Dealing cards...".to_string()).await;
                 if deal_card_counter == 1 {
                     lobby.deck.shuffle(); // shuffle card deck
+                    deal_cards_7(lobby, deal_card_counter).await; // deal first 2 face down then deal 3rd face up
+                    deal_card_counter += 1;
+                    lobby.game_state = BRING_IN;
+                    continue;
                 }
-                deal_cards_7(lobby, deal_card_counter).await; // deal first 2 face down then deal 3rd face up
-                lobby.game_state = BETTING_ROUND;
+                deal_cards_7(lobby, deal_card_counter).await; // deal 1 face up card
                 if deal_card_counter != 5 {
                     deal_card_counter += 1;
                 }
-            }
-            ANTE => {
-                // determine who has the worst hand face up card
-                // lowest card face up starts the betting
-                // if two players have the same lowest card, the one with the lowest suit starts
-                // if two players have the same lowest card and suit, the one closest to the dealer starts clockwise
-                let weakest_player = determine_lowest_card_player(lobby).await;
-                let mut players = lobby.players.lock().await;
-                
-                for player in players.iter_mut() {
-                    if player.name == weakest_player {
-                        lobby.first_betting_player = ;
-                    }
-                }
+                lobby.game_state = BETTING_ROUND;
 
-                // change to bring in
-                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
-                ante(lobby).await;
-                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
-                lobby.game_state = DEAL_CARDS;
+                // for i in 1..6 {
+                //     deal_cards_7(lobby, i).await;
+                // }
+                // lobby.game_state = SHOWDOWN;
+            }
+            BRING_IN => {
+                lobby.broadcast("Bring In stage".to_string()).await;
+                bring_in(lobby).await;
+                lobby.game_state = BETTING_ROUND;
+                
             }
             BETTING_ROUND => {
                 lobby.broadcast(format!("------{}st betting round!------", betting_round_count)).await;
                 betting_round(lobby).await;
                 if lobby.game_state == SHOWDOWN {
                     continue;
+                } else if betting_round_count == 5 {
+                    lobby.game_state = SHOWDOWN;
+                    continue;
                 } else {
                     lobby.game_state = DEAL_CARDS;
                     lobby.broadcast(format!("{} betting round complete!\nCurrent pot: {}", betting_round_count, lobby.pot)).await;
-                }
-                if betting_round_count == 5  && deal_card_counter == 5 {
-                    lobby.game_state = SHOWDOWN;
-                    continue;
                 }
                 betting_round_count += 1;
             }
             SHOWDOWN => {
                 lobby.broadcast("------Showdown Round!------".to_string()).await;
                 // change to 7 card showdown
+                get_rid_of_x(&lobby).await;
                 update_players_hand(lobby).await; // first update the players hands
                 showdown(lobby).await; // then should be able to call the same showdown function
                 lobby.game_state = END_OF_ROUND;
