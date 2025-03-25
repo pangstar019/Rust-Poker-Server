@@ -699,6 +699,34 @@ pub async fn display_hand(players_tx: Vec<UnboundedSender<Message>>, players_han
     }
 }
 
+// for 7 card stud, we will need to determine the best hand out of the 7 cards
+fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
+    assert!(hand.len() == 7);
+
+    let mut best_hand = (0, 0, 0, 0, 0, 0);
+    let mut best_hand_type = 0;
+
+    for i in 0..=2 {
+        for j in (i + 1)..=3 {
+            for k in (j + 1)..=4 {
+                for l in (k + 1)..=5 {
+                    for m in (l + 1)..=6 {
+                        let current_hand = vec![hand[i], hand[j], hand[k], hand[l], hand[m]];
+                        let current_hand_type = get_hand_type(&current_hand);
+                        if current_hand_type.0 > best_hand_type || (current_hand_type.0 == best_hand_type && current_hand_type.1 > best_hand.1)
+                        {
+                            best_hand = current_hand_type;
+                            best_hand_type = current_hand_type.0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best_hand
+    
+}
+
 fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 5);
 
@@ -807,6 +835,34 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     (1, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
 }
 
+pub async fn determine_lowest_card_player(lobby: &Lobby) -> String{
+    let mut players = lobby.players.lock().await;
+    let mut lowest_card = 100;
+    let mut lowest_card_player = String::new();
+    for player in players.iter_mut() {
+        let player_hand = player.hand.clone();
+        for card in player_hand.iter() {
+            if *card < lowest_card {
+                lowest_card = *card;
+                lowest_card_player = player.name.clone();
+            }
+        }
+    }
+
+    return lowest_card_player;
+}
+
+pub async fn update_players_hand(lobby: &Lobby) {
+    let mut players = lobby.players.lock().await;
+    for player in players.iter_mut() {
+        if player.state == FOLDED {
+            continue;
+        }
+        let player_hand = player.hand.clone();
+        let best_hand = get_best_hand(&player_hand);
+        player.hand = vec![best_hand.0, best_hand.1, best_hand.2, best_hand.3, best_hand.4, best_hand.5];
+    }
+}
 pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
     loop {
         match lobby.game_state {
@@ -874,12 +930,6 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
         match lobby.game_state {
             START_OF_ROUND => {
                 lobby.first_betting_player =(lobby.first_betting_player + 1) % lobby.current_player_count;
-                lobby.game_state = ANTE;
-            }
-            ANTE => {
-                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
-                ante(lobby).await;
-                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
                 lobby.game_state = DEAL_CARDS;
             }
             DEAL_CARDS => {
@@ -892,6 +942,26 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
                 if deal_card_counter != 5 {
                     deal_card_counter += 1;
                 }
+            }
+            ANTE => {
+                // determine who has the worst hand face up card
+                // lowest card face up starts the betting
+                // if two players have the same lowest card, the one with the lowest suit starts
+                // if two players have the same lowest card and suit, the one closest to the dealer starts clockwise
+                let weakest_player = determine_lowest_card_player(lobby).await;
+                let mut players = lobby.players.lock().await;
+                
+                for player in players.iter_mut() {
+                    if player.name == weakest_player {
+                        lobby.first_betting_player = ;
+                    }
+                }
+
+                // change to bring in
+                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
+                ante(lobby).await;
+                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
+                lobby.game_state = DEAL_CARDS;
             }
             BETTING_ROUND => {
                 lobby.broadcast(format!("------{}st betting round!------", betting_round_count)).await;
@@ -911,7 +981,8 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
             SHOWDOWN => {
                 lobby.broadcast("------Showdown Round!------".to_string()).await;
                 // change to 7 card showdown
-                showdown(lobby).await;
+                update_players_hand(lobby).await; // first update the players hands
+                showdown(lobby).await; // then should be able to call the same showdown function
                 lobby.game_state = END_OF_ROUND;
             }
             END_OF_ROUND => {
