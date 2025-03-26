@@ -177,6 +177,7 @@ pub struct Lobby {
     pub game_state: i32,
     pub first_betting_player: i32,
     pub game_type: i32,
+    pub community_cards: Arc<Mutex<Vec<i32>>>,
 }
 
 impl Lobby {
@@ -194,6 +195,7 @@ impl Lobby {
             first_betting_player: 0,
             game_db: SqlitePool::connect("sqlite://poker.db").await.unwrap(),
             game_type: NOT_SET,
+            community_cards: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -372,13 +374,13 @@ impl Lobby {
         self.change_player_state(IN_GAME).await;
     
         if self.game_type == FIVE_CARD_DRAW {
-            games::game_state_machine(self).await;
+            games::five_card_game_state_machine(self).await;
         }
         // call different game state machine (not done yet)
         else if self.game_type == SEVEN_CARD_STUD {
-            games::game_state_machine(self).await;
+            games::seven_card_game_state_machine(self).await;
         } else {
-            games::game_state_machine(self).await;
+            games::texas_holdem_game_state_machine(self).await;
         }
     
         self.game_state = JOINABLE;
