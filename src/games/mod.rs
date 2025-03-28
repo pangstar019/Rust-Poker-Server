@@ -231,28 +231,33 @@ pub async fn betting_round(lobby: &mut Lobby) {
     let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
     // ensure all players have current_bet set to 0
 
-    let mut current_player_index = if lobby.game_type == TEXAS_HOLD_EM {
-        (lobby.first_betting_player + 2) % lobby.current_player_count
-    } else {
-        lobby.first_betting_player
-    };
+    // let mut current_player_index = if lobby.game_type == TEXAS_HOLD_EM {
+    //     (lobby.first_betting_player + 2) % lobby.current_player_count
+    // } else {
+    //     lobby.first_betting_player
+    // };
+    let mut current_player_index = lobby.first_betting_player;
+
     let mut current_lobby_bet = 0; // resets to 0 every betting round
     let mut players_remaining = lobby.current_player_count;
     let mut folded_count = 0;
     let mut all_folded = false;
 
-    // so players cant check after blinds
-    if lobby.pot == 15 && lobby.game_type == TEXAS_HOLD_EM {
-        current_lobby_bet = lobby.pot;
-    }
-
+    
     for player in players.iter_mut() {
         if player.state == FOLDED {
             folded_count += 1;
         }
     }
-    for player in players.iter_mut() {
-        player.current_bet = 0; // reset all players to 0
+    // so players cant check after blinds
+    if lobby.pot == 15 && lobby.game_type == TEXAS_HOLD_EM {
+        current_lobby_bet = lobby.pot;
+    }
+    else{
+        // only reset their current bet if its not the first betting round of texas holdem
+        for player in players.iter_mut() {
+            player.current_bet = 0; // reset all players to 0
+        }
     }
 
     while players_remaining > 0 {
@@ -929,21 +934,26 @@ pub async fn get_rid_of_x(lobby: &Lobby) {
     }
 }
 pub async fn blinds(lobby: &mut Lobby) {
-    let players = lobby.players.lock().await;
-    let small_blind_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
-    let big_blind_player = (lobby.first_betting_player + 2) % lobby.current_player_count;
+    let mut players = lobby.players.lock().await;
+    let small_blind_player_i = (lobby.first_betting_player + 1) % lobby.current_player_count;
+    let big_blind_player_i = (lobby.first_betting_player + 2) % lobby.current_player_count;
     let big_blind = 10;
     let small_blind = 5;
 
-    let mut small_blind_player = players[small_blind_player as usize].clone();
-    let mut big_blind_player = players[big_blind_player as usize].clone();
+    let mut names: Vec<String> = Vec::new();
+    // let big_blind_player = &mut players[big_blind_player_i as usize];
+    
+    let blind_player = &mut players[small_blind_player_i as usize];
+    blind_player.wallet -= small_blind;
+    blind_player.current_bet += small_blind;
+    names.push(blind_player.name.clone());
+    println!("smal blind player current bet: {}", blind_player.current_bet);
 
-    small_blind_player.wallet -= small_blind;
-    small_blind_player.current_bet += small_blind;
-    println!("smal blind player current bet: {}", small_blind_player.current_bet);
-    big_blind_player.wallet -= big_blind;
-    big_blind_player.current_bet += big_blind;
-    println!("big blind player current bet: {}", big_blind_player.current_bet);
+    let blind_player = &mut players[big_blind_player_i as usize];
+    blind_player.wallet -= big_blind;
+    blind_player.current_bet += big_blind;
+    names.push(blind_player.name.clone());
+    println!("big blind player current bet: {}", blind_player.current_bet);
 
 
     lobby.pot += small_blind;
@@ -951,7 +961,20 @@ pub async fn blinds(lobby: &mut Lobby) {
 
 
     let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-    lobby.lobby_wide_send(players_tx, format!("{} has paid the small blind of {}\n{} has paid the big blind of {}", small_blind_player.name, small_blind, big_blind_player.name, big_blind)).await;
+    lobby.lobby_wide_send(players_tx, format!("{} has paid the small blind of {}\n{} has paid the big blind of {}", names[0], small_blind, names[1], big_blind)).await;
+}
+
+pub async fn find_next_start(lobby: &mut Lobby, dealer_index: i32) {
+    let players = lobby.players.lock().await;
+    let mut next_start = 0;
+    for i in 1..=lobby.current_player_count {
+        let index = (dealer_index + i) % lobby.current_player_count;
+        if players[index as usize].state != FOLDED {
+            next_start = index;
+            break;
+        }
+    }
+    lobby.first_betting_player = next_start;
 }
 pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
     loop {
@@ -1089,6 +1112,7 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
 pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
     let mut betting_round_count = 1;
     let mut deal_card_counter = 1;
+    let dealer_index = lobby.first_betting_player;
     loop {
         match lobby.game_state {
             START_OF_ROUND => {
@@ -1098,7 +1122,10 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
             SMALL_AND_BIG_BLIND => {
                 lobby.broadcast("Adding Small and Big Blind".to_string()).await;
                 blinds(lobby).await;
-                lobby.first_betting_player = (lobby.first_betting_player + 3) % lobby.current_player_count;
+                println!("First betting player: {}", lobby.first_betting_player);
+                lobby.first_betting_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.first_betting_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.first_betting_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
                 lobby.game_state = DEAL_CARDS;
             }
             DEAL_CARDS => {
@@ -1114,6 +1141,9 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
             }
             BETTING_ROUND => {
                 lobby.broadcast(format!("------Betting round {}!------", betting_round_count)).await;
+                if betting_round_count !=1 {
+                    find_next_start(lobby, dealer_index).await; // find the next player to start the betting round (left most player thats not folded)
+                }
                 betting_round(lobby).await;
                 if lobby.game_state == SHOWDOWN {
                     continue;
@@ -1134,6 +1164,7 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
                 lobby.game_state = END_OF_ROUND;
             }
             END_OF_ROUND => {
+                lobby.first_betting_player = (dealer_index+ 1) % lobby.current_player_count;
                 lobby.game_state = UPDATE_DB;
             }
             UPDATE_DB => {
