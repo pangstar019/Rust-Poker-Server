@@ -156,6 +156,7 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
                     player.hand.push(lobby.deck.deal());
                     player.hand.push(lobby.deck.deal());
                 }
+                player.games_played += 1; // if dealt cards then they played
             }
             let players_hands = players.iter().filter(|p| p.state != FOLDED).map(|p| p.hand.clone()).collect::<Vec<_>>(); // get all hands
             display_hand(players_tx.clone(), players_hands.clone()).await;
@@ -651,7 +652,7 @@ pub async fn showdown(lobby: &mut Lobby) {
     let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
     let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
     let mut winning_players_names: Vec<String> = Vec::new();
-    let mut winning_hand = (0, 0, 0, 0, 0, 0); // keeps track of current highest hand, could change when incrementing between players
+    let mut winning_hand = (-1, -1, -1, -1, -1, -1); // keeps track of current highest hand, could change when incrementing between players
     let mut winning_players_indices: Vec<i32> = Vec::new();
     let mut player_hand_type: (i32, i32, i32, i32, i32, i32);
     for player in players.iter_mut() {
@@ -814,13 +815,11 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
         }
     }
 
-    // Check for full house
-    if ranks[0] == ranks[1] && ranks[3] == ranks[4] {
-        if ranks[2] == ranks[0] {
-            return (6, ranks[0], ranks[4], 0, 0, 0);
-        } else if ranks[2] == ranks[4] {
-            return (6, ranks[4], ranks[0], 0, 0, 0);
-        }
+    // Improved full house detection
+    if (ranks[0] == ranks[1] && ranks[2] == ranks[3] && ranks[2] == ranks[4])
+        || (ranks[0] == ranks[1] && ranks[1] == ranks[2] && ranks[3] == ranks[4])
+    {
+        return (6, ranks[2], ranks[0], 0, 0, 0); // Full house
     }
 
     if flush {
@@ -846,7 +845,7 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     // Check two pair
     if ranks[0] == ranks[1] && ranks[2] == ranks[3] {
         return (
-            3,
+            2,
             ranks[0].max(ranks[2]),
             ranks[0].min(ranks[2]),
             ranks[4],
@@ -855,7 +854,7 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
         );
     } else if ranks[0] == ranks[1] && ranks[3] == ranks[4] {
         return (
-            3,
+            2,
             ranks[0].max(ranks[3]),
             ranks[0].min(ranks[3]),
             ranks[2],
@@ -864,7 +863,7 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
         );
     } else if ranks[1] == ranks[2] && ranks[3] == ranks[4] {
         return (
-            3,
+            2,
             ranks[1].max(ranks[3]),
             ranks[1].min(ranks[3]),
             ranks[0],
@@ -877,18 +876,19 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     for i in 0..4 {
         if ranks[i] == ranks[i + 1] {
             return match i {
-                0 => (2, ranks[i], ranks[4], ranks[3], ranks[2], 0),
-                1 => (2, ranks[i], ranks[4], ranks[3], ranks[0], 0),
-                2 => (2, ranks[i], ranks[4], ranks[1], ranks[0], 0),
-                3 => (2, ranks[i], ranks[2], ranks[1], ranks[0], 0),
+                0 => (1, ranks[i], ranks[4], ranks[3], ranks[2], 0),
+                1 => (1, ranks[i], ranks[4], ranks[3], ranks[0], 0),
+                2 => (1, ranks[i], ranks[4], ranks[1], ranks[0], 0),
+                3 => (1, ranks[i], ranks[2], ranks[1], ranks[0], 0),
                 _ => unreachable!(),
             };
         }
     }
 
     // High card
-    (1, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
+    (0, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
 }
+
 
 // gets players best hand of the 7 cards
 pub async fn update_players_hand(lobby: &Lobby) {
@@ -1164,11 +1164,20 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
                 lobby.game_state = END_OF_ROUND;
             }
             END_OF_ROUND => {
+                // clear the community cards
+                let mut community_cards = lobby.community_cards.lock().await;
+                community_cards.clear();
+                // clear players bets
+                let mut players = lobby.players.lock().await;
+                for player in players.iter_mut() {
+                    player.current_bet = 0;
+                }
+                lobby.pot = 0;
+                
                 lobby.first_betting_player = (dealer_index+ 1) % lobby.current_player_count;
                 lobby.game_state = UPDATE_DB;
             }
             UPDATE_DB => {
-                lobby.pot = 0;
                 lobby.update_db().await;
                 break;
             }
