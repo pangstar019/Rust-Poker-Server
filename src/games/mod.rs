@@ -213,7 +213,7 @@ pub async fn bring_in(lobby: &mut Lobby) {
             }
         }
     }
-    let bring_in = 10;
+    let bring_in = 15;
     players[lowest_up_card_player].wallet -= bring_in;
     players[lowest_up_card_player].current_bet += bring_in;
     lobby.pot += bring_in;
@@ -251,7 +251,7 @@ pub async fn betting_round(lobby: &mut Lobby) {
         }
     }
     // so players cant check after blinds
-    if lobby.pot == 15 && lobby.game_type == TEXAS_HOLD_EM {
+    if lobby.pot == 15 && (lobby.game_type == TEXAS_HOLD_EM  || lobby.game_type == SEVEN_CARD_STUD) {
         current_lobby_bet = lobby.pot;
     }
     else{
@@ -661,6 +661,7 @@ pub async fn showdown(lobby: &mut Lobby) {
         };
         let player_hand = player.hand.clone();
         if lobby.game_type == SEVEN_CARD_STUD || lobby.game_type == TEXAS_HOLD_EM {
+            // already has hand ranking
             player_hand_type = (player.hand[0], player.hand[1], player.hand[2], player.hand[3], player.hand[4], player.hand[5]);
         }
         else {
@@ -844,32 +845,11 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
 
     // Check two pair
     if ranks[0] == ranks[1] && ranks[2] == ranks[3] {
-        return (
-            2,
-            ranks[0].max(ranks[2]),
-            ranks[0].min(ranks[2]),
-            ranks[4],
-            0,
-            0,
-        );
+        return (2, ranks[0].max(ranks[2]), ranks[0].min(ranks[2]), ranks[4], 0, 0);
     } else if ranks[0] == ranks[1] && ranks[3] == ranks[4] {
-        return (
-            2,
-            ranks[0].max(ranks[3]),
-            ranks[0].min(ranks[3]),
-            ranks[2],
-            0,
-            0,
-        );
+        return (2, ranks[0].max(ranks[3]), ranks[0].min(ranks[3]), ranks[2], 0, 0);
     } else if ranks[1] == ranks[2] && ranks[3] == ranks[4] {
-        return (
-            2,
-            ranks[1].max(ranks[3]),
-            ranks[1].min(ranks[3]),
-            ranks[0],
-            0,
-            0,
-        );
+        return (2, ranks[1].max(ranks[3]), ranks[1].min(ranks[3]), ranks[0], 0, 0);
     }
 
     // Check one pair
@@ -905,12 +885,12 @@ pub async fn update_players_hand(lobby: &Lobby) {
             player.hand.clone()
         };
         
-        let mut translated_cards: String = Default::default();
-        for (count, card) in player.hand.iter().enumerate() {
-            translated_cards.push_str(&format!("{}. ", count + 1));
-            translated_cards.push_str(translate_card(*card).await.as_str());
-            translated_cards.push_str("\n");
-        }
+        // let mut translated_cards: String = Default::default();
+        // for (count, card) in player.hand.iter().enumerate() {
+        //     translated_cards.push_str(&format!("{}. ", count + 1));
+        //     translated_cards.push_str(translate_card(*card).await.as_str());
+        //     translated_cards.push_str("\n");
+        // }
         // println!("Player {} hand:\n{}", player.name, translated_cards.trim_end_matches(", "));
         
         let best_hand = get_best_hand(&player_hand);
@@ -1098,6 +1078,10 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
                 lobby.game_state = UPDATE_DB;
             }
             UPDATE_DB => {
+                // let mut players = lobby.players.lock().await;
+                // for player in players.iter_mut() {
+                //     player.current_bet = 0;
+                // }
                 lobby.pot = 0;
                 lobby.update_db().await;
                 break;
@@ -1188,3 +1172,19 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
     }
 }
 
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_hand_type_high_card() {
+        let hand = vec![0, 8, 23, 29, 51]; // Ace Hearts 9 Hearts Jack Diamond 4 Spade King Club
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (0, 13, 12, 10, 8, 3));
+    }
+
+}
