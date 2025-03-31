@@ -1,3 +1,9 @@
 target/
+debug/
+
+
 poker.db
+
+
+
 Cargo.lock

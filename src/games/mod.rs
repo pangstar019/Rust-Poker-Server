@@ -16,6 +16,9 @@ const EMPTY: i32 = -1;
 pub const JOINABLE: i32 = 0;
 pub const START_OF_ROUND: i32 = 1;
 const ANTE: i32 = 2;
+const SMALL_AND_BIG_BLIND: i32 = 19;
+const BIG_BLIND: i32 = 20;
+const DEAL_COMMUNITY_CARDS: i32 = 21;
 const DEAL_CARDS: i32 = 3;
 const FIRST_BETTING_ROUND: i32 = 14;
 const SECOND_BETTING_ROUND: i32 = 15;
@@ -59,38 +62,11 @@ pub async fn deal_cards(lobby: &mut Lobby) {
         FIVE_CARD_DRAW => deal_cards_5(lobby).await,
         //needs to implement the round checks
         SEVEN_CARD_STUD => deal_cards_7(lobby, 0).await,
-        TEXAS_HOLD_EM => deal_cards_texas(lobby).await,
+        // TEXAS_HOLD_EM => deal_cards_texas(lobby).await,
         _ => println!("Invalid game type."),
     }
 }
 
-async fn deal_cards_texas(lobby: &mut Lobby) {
-    let mut players = lobby.players.lock().await;
-    for player in players.iter_mut() {
-        if player.state != FOLDED {
-            player.hand.push(lobby.deck.deal());
-        }
-    }
-    // print the hands to the players
-    let players_tx = players
-        .iter()
-        .filter(|p| p.state != FOLDED)
-        .map(|p| p.tx.clone())
-        .collect::<Vec<_>>(); // get all tx's
-    let players_hands = players
-        .iter()
-        .filter(|p| p.state != FOLDED)
-        .map(|p| p.hand.clone())
-        .collect::<Vec<_>>(); // get all hands
-    display_hand(players_tx.clone(), players_hands.clone()).await;
-}
-
-//how i wanna design this is the we will figure out if this is the first dealing card round where then we need to 
-//give each players 2 face down and 1 face up card , and this is done by setting up each card dealt with a type 
-//face down or face up and then we can we will deal a face up card normally unless its the very last dealing card 
-//round which then we will give 1 face down card and we will show the face up cards to the user by doing if statements against 
-//the type of each card to check if it is face up or face down and if its face up append the card into the list if it is face down 
-//we append a string "X"
 async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
     let mut players = lobby.players.lock().await;
     let mut count = 0;
@@ -123,15 +99,35 @@ async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
             }
         }
     }
-
     // Get active players
     let active_players: Vec<_> = players.iter().filter(|p| p.state != FOLDED).collect();
     let players_tx: Vec<_> = active_players.iter().map(|p| p.tx.clone()).collect();
     let players_hands: Vec<_> = active_players.iter().map(|p| p.hand.clone()).collect();
-
-    // Display hands to players
     display_hand(players_tx, players_hands).await;
 }
+
+// async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
+//     let mut players = lobby.players.lock().await;
+//     if round == 1 {
+//         for player in players.iter_mut() {
+//             loop {
+//                 if player.state != FOLDED {
+//                     // deal player cards
+//                     let card1 = lobby.deck.deal();
+//                     let card2 = lobby.deck.deal();
+//                     player.hand.push(card1);
+//                     player.hand.push(card2);
+//                     break;
+//                 }
+//             }
+//         }
+//     }
+//     // Get active players
+//     let active_players: Vec<_> = players.iter().filter(|p| p.state != FOLDED).collect();
+//     let players_tx: Vec<_> = active_players.iter().map(|p| p.tx.clone()).collect();
+//     let players_hands: Vec<_> = active_players.iter().map(|p| p.hand.clone()).collect();
+//     display_hand(players_tx, players_hands).await;
+// }
 
 async fn deal_cards_5(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
@@ -143,43 +139,47 @@ async fn deal_cards_5(lobby: &mut Lobby) {
         }
     }
     // print the hands to the players
-    let players_tx = players
-        .iter()
-        .filter(|p| p.state != FOLDED)
-        .map(|p| p.tx.clone())
-        .collect::<Vec<_>>(); // get all tx's
-    let players_hands = players
-        .iter()
-        .filter(|p| p.state != FOLDED)
-        .map(|p| p.hand.clone())
-        .collect::<Vec<_>>(); // get all hands
+    let players_tx = players.iter().filter(|p| p.state != FOLDED).map(|p| p.tx.clone()).collect::<Vec<_>>(); // get all tx's
+    let players_hands = players.iter().filter(|p| p.state != FOLDED).map(|p| p.hand.clone()).collect::<Vec<_>>(); // get all hands
     display_hand(players_tx.clone(), players_hands.clone()).await;
 }
 
-//Dealing the community cards for the texas hold em game
-//for flop round we will draw 3 cards for all users to see
-//for turn round we will draw 1 card for all users to see
-//for river round we will draw 1 card for all users to see
-pub async fn deal_server_cards(lobby: &mut Lobby) {
+pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
     let mut community_cards = lobby.community_cards.lock().await;
-    match lobby.game_state {
-        FLOP_ROUND => {
+    let mut players = lobby.players.lock().await;
+    let players_tx = players.iter().filter(|p| p.state != FOLDED).map(|p| p.tx.clone()).collect::<Vec<_>>();
+    match round {
+        1 => {
+            for player in players.iter_mut() {
+                if player.state != FOLDED {
+                    // deal 2 cards to each player
+                    player.hand.push(lobby.deck.deal());
+                    player.hand.push(lobby.deck.deal());
+                }
+            }
+            let players_hands = players.iter().filter(|p| p.state != FOLDED).map(|p| p.hand.clone()).collect::<Vec<_>>(); // get all hands
+            display_hand(players_tx.clone(), players_hands.clone()).await;
+            return;
+        }
+        2 => {
+            // for flop round, deals 3 community
             for _ in 0..3 {
                 community_cards.push(lobby.deck.deal());
             }
         }
-        TURN_ROUND => {
-            community_cards.push(lobby.deck.deal());
-        }
-        RIVER_ROUND => {
-            community_cards.push(lobby.deck.deal());
-        }
         _ => {
-            println!("Invalid game state: {}", lobby.game_state);
+            // any other round the same
+            community_cards.push(lobby.deck.deal());
         }
     }
-
+    let players_tx = players.iter().filter(|p| p.state != FOLDED).map(|p| p.tx.clone()).collect::<Vec<_>>();
+    let mut message = String::from("Community cards:\n");
+    for (i, card) in community_cards.iter().enumerate() {
+        message.push_str(&format!("{}. {}\n", i + 1, translate_card(*card).await));
+    }
+    lobby.lobby_wide_send(players_tx.clone(), message).await;
 }
+
 
 pub async fn ante(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
@@ -231,19 +231,33 @@ pub async fn betting_round(lobby: &mut Lobby) {
     let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
     // ensure all players have current_bet set to 0
 
+    // let mut current_player_index = if lobby.game_type == TEXAS_HOLD_EM {
+    //     (lobby.first_betting_player + 2) % lobby.current_player_count
+    // } else {
+    //     lobby.first_betting_player
+    // };
     let mut current_player_index = lobby.first_betting_player;
+
     let mut current_lobby_bet = 0; // resets to 0 every betting round
     let mut players_remaining = lobby.current_player_count;
     let mut folded_count = 0;
     let mut all_folded = false;
 
+    
     for player in players.iter_mut() {
         if player.state == FOLDED {
             folded_count += 1;
         }
     }
-    for player in players.iter_mut() {
-        player.current_bet = 0; // reset all players to 0
+    // so players cant check after blinds
+    if lobby.pot == 15 && lobby.game_type == TEXAS_HOLD_EM {
+        current_lobby_bet = lobby.pot;
+    }
+    else{
+        // only reset their current bet if its not the first betting round of texas holdem
+        for player in players.iter_mut() {
+            player.current_bet = 0; // reset all players to 0
+        }
     }
 
     while players_remaining > 0 {
@@ -255,10 +269,11 @@ pub async fn betting_round(lobby: &mut Lobby) {
             continue;
         }
         let message = format!(
-                "Choose an option:\n1. Check\n2. Raise\n3. Call\n4. Fold\n5. All-in\n\nYour amount to call: {}\nCurrent Pot: {}\nCurrent Wallet: {}",
+                "Choose an option:\n1. Check\n2. Raise\n3. Call\n4. Fold\n5. All-in\n6. Display Hand\n\nYour amount to call: {}\nCurrent Pot: {}\nCurrent Wallet: {}",
                 (current_lobby_bet - player.current_bet), lobby.pot, player.wallet
             );
         let _ = player.tx.send(Message::text(message));
+        println!("Player {} current bet {}", player.name, player.current_bet);
         loop {
             let choice = player.get_player_input().await;
             // println!("player input: {}", choice.clone());
@@ -440,6 +455,16 @@ pub async fn betting_round(lobby: &mut Lobby) {
                             .await;
                         break;
                     }
+                }
+                "6" => {
+                    let hand = player.hand.clone();
+                    let mut message = String::from("Your hand:\n");
+                    let mut i = 0;
+                    for card in hand.iter() {
+                        let card_str = translate_card(*card).await;
+                        message.push_str(&format!("{}. {}\n", i+1, card_str));
+                    }
+                    let _ = player.tx.send(Message::text(message));
                 }
                 "Disconnect" => {
                     // lobby.broadcast(format!("{} has disconnected and folded.", player.name)).await;
@@ -634,7 +659,7 @@ pub async fn showdown(lobby: &mut Lobby) {
             continue;
         };
         let player_hand = player.hand.clone();
-        if lobby.game_type == SEVEN_CARD_STUD {
+        if lobby.game_type == SEVEN_CARD_STUD || lobby.game_type == TEXAS_HOLD_EM {
             player_hand_type = (player.hand[0], player.hand[1], player.hand[2], player.hand[3], player.hand[4], player.hand[5]);
         }
         else {
@@ -865,6 +890,7 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     (1, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
 }
 
+// gets players best hand of the 7 cards
 pub async fn update_players_hand(lobby: &Lobby) {
     let mut players = lobby.players.lock().await;
     for player in players.iter_mut() {
@@ -872,7 +898,12 @@ pub async fn update_players_hand(lobby: &Lobby) {
             continue;
         }
         // println!("Player hand before update {} hand: {:?}", player.name, player.hand);
-        let player_hand = player.hand.clone();
+        let player_hand = if lobby.game_type == TEXAS_HOLD_EM {
+            let community_cards = lobby.community_cards.lock().await.clone();
+            [player.hand.clone(), community_cards].concat() // make 7 cards
+        } else {
+            player.hand.clone()
+        };
         
         let mut translated_cards: String = Default::default();
         for (count, card) in player.hand.iter().enumerate() {
@@ -888,6 +919,63 @@ pub async fn update_players_hand(lobby: &Lobby) {
     }
 }
 
+pub async fn get_rid_of_x(lobby: &Lobby) {
+    let mut players = lobby.players.lock().await;
+    for player in players.iter_mut() {
+        if player.state == FOLDED {
+            continue;
+        }
+        for card in player.hand.iter_mut() {
+            if *card > 52 {
+                *card -= 53;
+            }
+        }
+        display_hand(vec![player.tx.clone()], vec![player.hand.clone()]).await;
+    }
+}
+pub async fn blinds(lobby: &mut Lobby) {
+    let mut players = lobby.players.lock().await;
+    let small_blind_player_i = (lobby.first_betting_player + 1) % lobby.current_player_count;
+    let big_blind_player_i = (lobby.first_betting_player + 2) % lobby.current_player_count;
+    let big_blind = 10;
+    let small_blind = 5;
+
+    let mut names: Vec<String> = Vec::new();
+    // let big_blind_player = &mut players[big_blind_player_i as usize];
+    
+    let blind_player = &mut players[small_blind_player_i as usize];
+    blind_player.wallet -= small_blind;
+    blind_player.current_bet += small_blind;
+    names.push(blind_player.name.clone());
+    println!("smal blind player current bet: {}", blind_player.current_bet);
+
+    let blind_player = &mut players[big_blind_player_i as usize];
+    blind_player.wallet -= big_blind;
+    blind_player.current_bet += big_blind;
+    names.push(blind_player.name.clone());
+    println!("big blind player current bet: {}", blind_player.current_bet);
+
+
+    lobby.pot += small_blind;
+    lobby.pot += big_blind;
+
+
+    let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+    lobby.lobby_wide_send(players_tx, format!("{} has paid the small blind of {}\n{} has paid the big blind of {}", names[0], small_blind, names[1], big_blind)).await;
+}
+
+pub async fn find_next_start(lobby: &mut Lobby, dealer_index: i32) {
+    let players = lobby.players.lock().await;
+    let mut next_start = 0;
+    for i in 1..=lobby.current_player_count {
+        let index = (dealer_index + i) % lobby.current_player_count;
+        if players[index as usize].state != FOLDED {
+            next_start = index;
+            break;
+        }
+    }
+    lobby.first_betting_player = next_start;
+}
 pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
     loop {
         match lobby.game_state {
@@ -947,20 +1035,7 @@ pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
         }
     }
 }
-pub async fn get_rid_of_x(lobby: &Lobby) {
-    let mut players = lobby.players.lock().await;
-    for player in players.iter_mut() {
-        if player.state == FOLDED {
-            continue;
-        }
-        for card in player.hand.iter_mut() {
-            if *card > 52 {
-                *card -= 53;
-            }
-        }
-        display_hand(vec![player.tx.clone()], vec![player.hand.clone()]).await;
-    }
-}
+
 pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
     let mut betting_round_count = 1;
     let mut deal_card_counter = 1;
@@ -997,7 +1072,8 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
                 
             }
             BETTING_ROUND => {
-                lobby.broadcast(format!("------{}st betting round!------", betting_round_count)).await;
+                lobby.broadcast(format!("------Betting round {}!------", betting_round_count)).await;
+                // add fix later for right after the bring in, the next player can not check, they must call the bring in or raise i believe
                 betting_round(lobby).await;
                 if lobby.game_state == SHOWDOWN {
                     continue;
@@ -1006,7 +1082,7 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
                     continue;
                 } else {
                     lobby.game_state = DEAL_CARDS;
-                    lobby.broadcast(format!("{} betting round complete!\nCurrent pot: {}", betting_round_count, lobby.pot)).await;
+                    lobby.broadcast(format!("Betting round {} complete!\nCurrent pot: {}", betting_round_count, lobby.pot)).await;
                 }
                 betting_round_count += 1;
             }
@@ -1034,6 +1110,72 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
 }
 
 pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
-    
+    let mut betting_round_count = 1;
+    let mut deal_card_counter = 1;
+    let dealer_index = lobby.first_betting_player;
+    loop {
+        match lobby.game_state {
+            START_OF_ROUND => {
+                // lobby.first_betting_player =(lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.game_state = SMALL_AND_BIG_BLIND;
+            }
+            SMALL_AND_BIG_BLIND => {
+                lobby.broadcast("Adding Small and Big Blind".to_string()).await;
+                blinds(lobby).await;
+                println!("First betting player: {}", lobby.first_betting_player);
+                lobby.first_betting_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.first_betting_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.first_betting_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
+                lobby.game_state = DEAL_CARDS;
+            }
+            DEAL_CARDS => {
+                lobby.broadcast("Dealing cards...".to_string()).await;
+                if deal_card_counter == 1 {
+                    lobby.deck.shuffle(); // shuffle card deck
+                }
+                deal_cards_texas(lobby, deal_card_counter).await;
+                if deal_card_counter != 4 {
+                    deal_card_counter += 1;
+                }
+                lobby.game_state = BETTING_ROUND;
+            }
+            BETTING_ROUND => {
+                lobby.broadcast(format!("------Betting round {}!------", betting_round_count)).await;
+                if betting_round_count !=1 {
+                    find_next_start(lobby, dealer_index).await; // find the next player to start the betting round (left most player thats not folded)
+                }
+                betting_round(lobby).await;
+                if lobby.game_state == SHOWDOWN {
+                    continue;
+                } else if betting_round_count == 4 {
+                    lobby.game_state = SHOWDOWN;
+                    continue;
+                } else {
+                    lobby.game_state = DEAL_CARDS;
+                    lobby.broadcast(format!("Betting round {} complete!\nCurrent pot: {}", betting_round_count, lobby.pot)).await;
+                }
+                betting_round_count += 1;
+            }
+            SHOWDOWN => {
+                lobby.broadcast("------Showdown Round!------".to_string()).await;
+                // get_rid_of_x(&lobby).await;
+                update_players_hand(lobby).await; // first update the players hands
+                showdown(lobby).await; // then should be able to call the same showdown function
+                lobby.game_state = END_OF_ROUND;
+            }
+            END_OF_ROUND => {
+                lobby.first_betting_player = (dealer_index+ 1) % lobby.current_player_count;
+                lobby.game_state = UPDATE_DB;
+            }
+            UPDATE_DB => {
+                lobby.pot = 0;
+                lobby.update_db().await;
+                break;
+            }
+            _ => {
+                panic!("Invalid game state: {}", lobby.game_state);
+            }
+        }
+    }
 }
 
