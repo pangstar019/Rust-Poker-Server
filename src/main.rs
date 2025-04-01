@@ -62,6 +62,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time::{sleep, Duration};
 use lobby::*;
 use deck::Deck;
+use warp::test::request;
+
 
 
 /// The maximum number of players allowed in the server.
@@ -286,7 +288,7 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
     
     let lobby_names = get_lobby_names(server_lobby.clone()).await;
     tx.send(Message::text(format!(
-        "Current Lobbies:\n{}\nChoose an option:\nCreate new lobby with lobby name\n\t1 [lobby name]\nJoin lobby with lobby name\n\t2 [lobby name]\nShow current lobbies\n\t3\nShow stats\n\t4\nShow commands\n\t5\nQuit\n\t6\n",
+        "Current Lobbies:\n{}\nChoose an option:\nCreate new lobby with lobby name\n\t1 [lobby name]\nJoin lobby with lobby name\n\t2 [lobby name]\nShow current lobbies\n\t3\nShow stats\n\t4\nShow commands\n\t5\nQuit\n\t6\nFor help, type 'help'\n",
         lobby_names
     )))
     .unwrap();
@@ -401,7 +403,7 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
                     choice if choice.starts_with("5") => {
                         let lobby_names = get_lobby_names(server_lobby.clone()).await;
                         tx.send(Message::text(format!(
-                            "Current Lobbies:\n\t{}\nChoose an option:\nCreate new lobby with lobby name\n\t1 [lobby name]\nJoin lobby with lobby name\n\t2 [lobby name]\nShow current lobbies\n\t3\nShow stats\n\t4\nShow commands\n\t5\nQuit\n\t6\n",
+                            "Current Lobbies:\n{}\nChoose an option:\nCreate new lobby with lobby name\n\t1 [lobby name]\nJoin lobby with lobby name\n\t2 [lobby name]\nShow current lobbies\n\t3\nShow stats\n\t4\nShow commands\n\t5\nQuit\n\t6\nFor help, type 'help'\n",
                             lobby_names
                         )))
                         .unwrap();
@@ -409,6 +411,26 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
                     choice if choice.starts_with("6") => {
                         tx.send(Message::text("Goodbye!")).unwrap();
                         break;
+                    }
+                    // help command for the players who input help in the main then they can see how to input the command and after they join the lobby what they can press
+                    // to see the players and stats and ready up and quit the lobby
+                    choice if choice.starts_with("help") => {
+                        tx.send(Message::text(
+                            "Help Menu:\n\
+                            - To create a lobby: Type '1 [lobby name]'\n\
+                            - To join a lobby: Type '2 [lobby name]'\n\
+                            - To get lobby names: Type '3'\n\
+                            - To view your stats: Type '4'\n\
+                            - To exit the server: Type '6'\n\
+                            Once in a lobby:\n\
+                            - To ready up: Type 'r'\n\
+                            - To show player stats: Type 's'\n\
+                            - To show current players in the lobby: Type 'p'\n\
+                            - To leave the lobby: Type 'q'\n\
+                            - To view game rules: Type 'rule'\n\
+                            "
+                            
+                        )).unwrap();
                     }
                     _ => {
                         tx.send(Message::text("Invalid option.")).unwrap();
@@ -442,7 +464,7 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
     println!("{} has joined lobby: {}", player.name, player_lobby.lock().await.name);
     
     tx.send(Message::text(format!(
-        "Welcome to lobby: {}\nChoose an option:\n1. Ready:           r\n2. Show Players:    p\n3. View stats:      s\n4. Quit:            q\n\n",
+        "Welcome to lobby: {}\nChoose an option:\n1. Ready:           r\n2. Show Players:    p\n3. View stats:      s\n4. Quit:            q\n5. View Rules:      rule\n\n",
         player_lobby.lock().await.name
     )))
     .unwrap();
@@ -530,6 +552,24 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                                 });
                             }
                         }
+                        "rule"=> {
+                            tx.send(Message::text("Game rules:\n\n\
+                                - 5 Card Draw:\n\
+                                  Each player is dealt 5 cards. Players can exchange cards to improve their hand. \
+                                  The game consists of an ante round, a card exchange (drawing) round, and two betting rounds. \
+                                  The player with the best 5-card hand at the end wins the pot.\n\n\
+                                - 7 Card Stud:\n\
+                                  Each player is dealt 7 cards, with some face up and some face down. \
+                                  The game starts with an ante round, followed by the bring-in bet by the player with the lowest-ranking up-card. \
+                                  Players receive cards in multiple rounds (3rd card face up, 4th-6th cards face up, and 7th card face down). \
+                                  There are betting rounds after each card distribution, and the player with the best 5-card hand out of their 7 cards wins.\n\n\
+                                - Texas Holdem:\n\
+                                  Each player is dealt 2 hole cards, and 5 community cards are dealt face up in stages (flop, turn, and river). \
+                                  The game begins with small and big blinds, followed by a betting round. \
+                                  Players use their 2 hole cards and the 5 community cards to form the best 5-card hand. \
+                                  There are four betting rounds, and the player with the best hand at the showdown wins the pot.\n"))
+                            .unwrap();
+                        }
                         _ => {
                             tx.send(Message::text("Invalid option.")).unwrap();
                         }
@@ -541,4 +581,9 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
         }
     }
 }
+
+
+
+
+
 
