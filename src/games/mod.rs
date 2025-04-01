@@ -1,3 +1,55 @@
+//! # Poker Game Logic Module
+//!
+//! This module implements the core game logic for various poker games, including Five Card Draw, Seven Card Stud, and Texas Hold'em. 
+//! It is designed to handle all aspects of gameplay, such as dealing cards, managing betting rounds, determining winners, and updating game states.
+//!
+//! ## Features
+//! - **Game State Management**: Implements state machines for each poker variant to control the flow of the game.
+//! - **Card Dealing**: Handles the distribution of cards to players, including community cards for games like Texas Hold'em.
+//! - **Betting Rounds**: Manages betting rounds, including actions like checking, raising, calling, folding, and going all-in.
+//! - **Hand Evaluation**: Determines the best hand for each player and ranks them to decide the winner.
+//! - **Player Actions**: Supports player actions such as exchanging cards during a drawing round or paying blinds and antes.
+//! - **Concurrency**: Uses asynchronous programming with `async/await` to handle multiple players and game events concurrently.
+//! - **WebSocket Integration**: Designed to work with a WebSocket server for real-time communication with players.
+//!
+//! ## Constants
+//! This module defines a variety of constants to represent game states, player states, and return codes. These constants are used throughout the module to ensure consistency and readability.
+//!
+//! ## Supported Poker Variants
+//! - **Five Card Draw**: A classic poker game where players are dealt five cards and can exchange cards during a drawing round.
+//! - **Seven Card Stud**: A poker game where players are dealt seven cards, with a mix of face-up and face-down cards, and must form the best five-card hand.
+//! - **Texas Hold'em**: A popular poker variant where players are dealt two private cards and share five community cards.
+//!
+//! ## Game Flow
+//! Each poker variant follows a specific sequence of game states, such as:
+//! 1. Start of Round
+//! 2. Ante or Blinds
+//! 3. Card Dealing
+//! 4. Betting Rounds
+//! 5. Showdown
+//! 6. End of Round and Database Update
+//!
+//! ## Testing
+//! The module includes unit tests to verify the correctness of hand evaluation logic and other critical functions. These tests ensure that the game logic adheres to poker rules and handles edge cases correctly.
+//!
+//! ## Dependencies
+//! - **Tokio**: For asynchronous programming and synchronization primitives.
+//! - **Warp**: For WebSocket communication.
+//! - **SQLx**: For database interactions.
+//! - **Futures**: For handling asynchronous tasks.
+//!
+//! ## Usage
+//! This module is intended to be used as part of a larger poker server application. It interacts with other modules, such as the lobby and deck modules, to provide a complete poker experience.
+//!
+//! ## Notes
+//! - The module assumes that player actions are received via WebSocket messages and processed asynchronously.
+//! - The game logic is designed to be extensible, allowing for the addition of new poker variants or custom rules.
+//!
+//! This module handles the game logic for different poker games.
+//! It includes functions for dealing cards, managing betting rounds, and determining the winner.
+//! It also includes functions for handling player actions and updating the game state.
+//! The module is designed to be used with a WebSocket server and uses async/await for concurrency.
+
 use super::*;
 use crate::Deck;
 use crate::lobby::Lobby;
@@ -11,6 +63,7 @@ use warp::{filters::ws::WebSocket, ws::Message};
 
 
 // Lobby attribute definitions
+
 pub const MAX_PLAYER_COUNT: i32 = 5;
 const EMPTY: i32 = -1;
 pub const JOINABLE: i32 = 0;
@@ -57,6 +110,15 @@ pub const SEVEN_CARD_STUD: i32 = 11;
 pub const TEXAS_HOLD_EM: i32 = 12;
 pub const NOT_SET: i32 = 13;
 
+/// deals cards to players based on the game type.
+/// The function checks the game type and calls the appropriate function to deal cards.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// This function does not return a value. It updates the players' hands and displays them to active players.
+/// It also handles the display of hands to active players.
 pub async fn deal_cards(lobby: &mut Lobby) {
     match lobby.game_type {
         FIVE_CARD_DRAW => deal_cards_5(lobby).await,
@@ -67,6 +129,17 @@ pub async fn deal_cards(lobby: &mut Lobby) {
     }
 }
 
+/// Deals cards to players in a 7 Card Stud game.
+/// The first two cards are face-down, the third card is face-up.
+/// The last card is face-down.
+/// The function also handles the display of hands to active players.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// * `round` - The current round of the game (0 for the first round, 1 for the last card).
+/// 
+/// # Returns
+/// This function does not return a value. It updates the players' hands and displays them to active players.
 async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
     let mut players = lobby.players.lock().await;
     let mut count = 0;
@@ -129,6 +202,16 @@ async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
 //     display_hand(players_tx, players_hands).await;
 // }
 
+
+/// Deals 5 cards to each player in a Five Card Draw game.
+/// The function also handles the display of hands to active players.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// This function does not return a value. It updates the players' hands and displays them to active players.
+/// It also handles the display of hands to active players.
 async fn deal_cards_5(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     for _ in 0..5 {
@@ -144,6 +227,16 @@ async fn deal_cards_5(lobby: &mut Lobby) {
     display_hand(players_tx.clone(), players_hands.clone()).await;
 }
 
+/// Deals cards to players in a Texas Hold'em game.
+/// The function handles the dealing of community cards and player hands based on the round.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// * `round` - The current round of the game (1 for pre-flop, 2 for flop, etc.).
+/// 
+/// # Returns
+/// This function does not return a value. It updates the players' hands and community cards, and displays them to active players.
+/// It also handles the display of hands to active players.
 pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
     let mut community_cards = lobby.community_cards.lock().await;
     let mut players = lobby.players.lock().await;
@@ -156,6 +249,7 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
                     player.hand.push(lobby.deck.deal());
                     player.hand.push(lobby.deck.deal());
                 }
+                player.games_played += 1; // if dealt cards then they played
             }
             let players_hands = players.iter().filter(|p| p.state != FOLDED).map(|p| p.hand.clone()).collect::<Vec<_>>(); // get all hands
             display_hand(players_tx.clone(), players_hands.clone()).await;
@@ -180,7 +274,17 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
     lobby.lobby_wide_send(players_tx.clone(), message).await;
 }
 
-
+/// Handles the ante for players in a poker game.
+/// The function deducts a fixed amount from each player's wallet and adds it to the pot.
+/// It also updates the player's game statistics.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' wallets and game statistics.
+/// It also handles the display of hands to active players.
 pub async fn ante(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     for player in players.iter_mut() {
@@ -197,9 +301,16 @@ pub async fn ante(lobby: &mut Lobby) {
     return;
 }
 
-//This is the bring in bet for seven card draw and the rule for this is
-//The player with the lowest-ranking up-card pays the bring-in, and betting proceeds after that in normal clockwise order
-// and to break ties in card ranks we will use the suit order of spades, hearts, diamonds, and clubs
+///This is the bring in bet for seven card draw and the rule for this is
+///The player with the lowest-ranking up-card pays the bring-in, and betting proceeds after that in normal clockwise order
+/// and to break ties in card ranks we will use the suit order of spades, hearts, diamonds, and clubs
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' wallets and game statistics.
+/// It also handles the display of hands to active players.
 pub async fn bring_in(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     let mut lowest_up_card = 14;
@@ -212,7 +323,7 @@ pub async fn bring_in(lobby: &mut Lobby) {
             }
         }
     }
-    let bring_in = 10;
+    let bring_in = 15;
     players[lowest_up_card_player].wallet -= bring_in;
     players[lowest_up_card_player].current_bet += bring_in;
     lobby.pot += bring_in;
@@ -222,6 +333,17 @@ pub async fn bring_in(lobby: &mut Lobby) {
 
 }
 
+/// Handles the betting round for players in a poker game.
+/// The function manages player actions such as checking, raising, calling, folding, and going all-in.
+/// It also updates the game state and player statistics.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' wallets and game statistics.
+/// It also handles the display of hands to active players.
 pub async fn betting_round(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     if players.len() == 1 {
@@ -250,7 +372,7 @@ pub async fn betting_round(lobby: &mut Lobby) {
         }
     }
     // so players cant check after blinds
-    if lobby.pot == 15 && lobby.game_type == TEXAS_HOLD_EM {
+    if lobby.pot == 15 && (lobby.game_type == TEXAS_HOLD_EM  || lobby.game_type == SEVEN_CARD_STUD) {
         current_lobby_bet = lobby.pot;
     }
     else{
@@ -499,6 +621,18 @@ pub async fn betting_round(lobby: &mut Lobby) {
     // if all but one player folded, the remaining player wins the pot
 }
 
+
+/// Handles the drawing round for players in a poker game.
+/// The function allows players to choose between standing pat (keeping their hand) or exchanging cards.
+/// It also updates the game state and player statistics.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' hands and game statistics.
+/// It also handles the display of hands to active players.
 pub async fn drawing_round(lobby: &mut Lobby) {
     //As the drawing round starts, we will check if their status is folded, if it is, we will skip them
     //else we will continue the drawing round for that player and we will display a input menu of "Stand Pat or Exchange cards"
@@ -646,12 +780,24 @@ pub async fn drawing_round(lobby: &mut Lobby) {
     }
 }
 
+
+/// Handles the showdown phase of the game, where players reveal their hands and determine the winner.
+/// The function evaluates the hands of all players and determines the winner(s) based on the hand rankings.
+/// It also updates the players' wallets and game statistics.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' wallets and game statistics.
+/// It also handles the display of hands to active players.
 pub async fn showdown(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
     let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
     let mut winning_players_names: Vec<String> = Vec::new();
-    let mut winning_hand = (0, 0, 0, 0, 0, 0); // keeps track of current highest hand, could change when incrementing between players
+    let mut winning_hand = (-1, -1, -1, -1, -1, -1); // keeps track of current highest hand, could change when incrementing between players
     let mut winning_players_indices: Vec<i32> = Vec::new();
     let mut player_hand_type: (i32, i32, i32, i32, i32, i32);
     for player in players.iter_mut() {
@@ -660,6 +806,7 @@ pub async fn showdown(lobby: &mut Lobby) {
         };
         let player_hand = player.hand.clone();
         if lobby.game_type == SEVEN_CARD_STUD || lobby.game_type == TEXAS_HOLD_EM {
+            // already has hand ranking
             player_hand_type = (player.hand[0], player.hand[1], player.hand[2], player.hand[3], player.hand[4], player.hand[5]);
         }
         else {
@@ -695,6 +842,16 @@ pub async fn showdown(lobby: &mut Lobby) {
     lobby.lobby_wide_send(players_tx, format!("Winner: {}", winner_names)).await;
 }
 
+
+/// Translates a card number into a human-readable string representation.
+/// The function handles the card's rank and suit, and returns a string like "Ace of Hearts" or "10 of Diamonds".
+/// 
+/// # Arguments
+/// * `card` - An integer representing the card number (0-51 for standard cards, 53+ for face-down cards).
+/// 
+/// # Returns
+/// 
+/// This function returns a `String` representing the card's rank and suit.
 pub async fn translate_card(card: i32) -> String {
     //if card is greater than 52 during the very final round of 7 card stud which is the showdown round
     //We will do card -53 to get the actual card value else if it is not that round yet we will just display X
@@ -733,6 +890,17 @@ pub async fn translate_card(card: i32) -> String {
     return cardStr;
 }
 
+
+/// Displays the players' hands to all active players in the game.
+/// The function formats the hands into a readable string and sends it to each player's channel.
+/// 
+/// # Arguments
+/// * `players_tx` - A vector of `UnboundedSender<Message>` representing the channels for each player.
+/// * `players_hands` - A vector of vectors containing the players' hands (card numbers).
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It sends messages to the players' channels.
 pub async fn display_hand(players_tx: Vec<UnboundedSender<Message>>, players_hands: Vec<Vec<i32>>) {
     // let players = self.players;
     let mut message: String;
@@ -754,7 +922,22 @@ pub async fn display_hand(players_tx: Vec<UnboundedSender<Message>>, players_han
     }
 }
 
+
 // for 7 card stud, we will need to determine the best hand out of the 7 cards
+/// This function takes a hand of 7 cards and returns the best hand possible.
+/// It evaluates all combinations of 5 cards from the 7 and determines the best hand type.
+/// 
+/// # Arguments
+/// * `hand` - A slice of integers representing the 7 cards in the hand.
+/// 
+/// # Returns
+/// 
+/// This function returns a tuple containing the best hand type and the ranks of the cards in the best hand.
+/// The tuple format is (hand_type, rank1, rank2, rank3, rank4, rank5).
+/// 
+/// # Panics
+/// 
+/// This function will panic if the length of the hand is not 7.
 fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 7);
     println!("Hand: {:?}", hand);
@@ -780,6 +963,16 @@ fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     
 }
 
+/// This function takes a hand of 5 cards and returns the hand type and ranks.
+/// It evaluates the hand for various poker hands such as flush, straight, four of a kind, etc.
+/// 
+/// # Arguments
+/// * `hand` - A slice of integers representing the 5 cards in the hand.
+/// 
+/// # Returns
+/// 
+/// This function returns a tuple containing the hand type and the ranks of the cards in the hand.
+/// The tuple format is (hand_type, rank1, rank2, rank3, rank4, rank5).
 fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 5);
 
@@ -812,13 +1005,11 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
         }
     }
 
-    // Check for full house
-    if ranks[0] == ranks[1] && ranks[3] == ranks[4] {
-        if ranks[2] == ranks[0] {
-            return (6, ranks[0], ranks[4], 0, 0, 0);
-        } else if ranks[2] == ranks[4] {
-            return (6, ranks[4], ranks[0], 0, 0, 0);
-        }
+    // Improved full house detection
+    if (ranks[0] == ranks[1] && ranks[2] == ranks[3] && ranks[2] == ranks[4])
+        || (ranks[0] == ranks[1] && ranks[1] == ranks[2] && ranks[3] == ranks[4])
+    {
+        return (6, ranks[2], ranks[0], 0, 0, 0); // Full house
     }
 
     if flush {
@@ -843,52 +1034,40 @@ fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
 
     // Check two pair
     if ranks[0] == ranks[1] && ranks[2] == ranks[3] {
-        return (
-            3,
-            ranks[0].max(ranks[2]),
-            ranks[0].min(ranks[2]),
-            ranks[4],
-            0,
-            0,
-        );
+        return (2, ranks[0].max(ranks[2]), ranks[0].min(ranks[2]), ranks[4], 0, 0);
     } else if ranks[0] == ranks[1] && ranks[3] == ranks[4] {
-        return (
-            3,
-            ranks[0].max(ranks[3]),
-            ranks[0].min(ranks[3]),
-            ranks[2],
-            0,
-            0,
-        );
+        return (2, ranks[0].max(ranks[3]), ranks[0].min(ranks[3]), ranks[2], 0, 0);
     } else if ranks[1] == ranks[2] && ranks[3] == ranks[4] {
-        return (
-            3,
-            ranks[1].max(ranks[3]),
-            ranks[1].min(ranks[3]),
-            ranks[0],
-            0,
-            0,
-        );
+        return (2, ranks[1].max(ranks[3]), ranks[1].min(ranks[3]), ranks[0], 0, 0);
     }
 
     // Check one pair
     for i in 0..4 {
         if ranks[i] == ranks[i + 1] {
             return match i {
-                0 => (2, ranks[i], ranks[4], ranks[3], ranks[2], 0),
-                1 => (2, ranks[i], ranks[4], ranks[3], ranks[0], 0),
-                2 => (2, ranks[i], ranks[4], ranks[1], ranks[0], 0),
-                3 => (2, ranks[i], ranks[2], ranks[1], ranks[0], 0),
+                0 => (1, ranks[i], ranks[4], ranks[3], ranks[2], 0),
+                1 => (1, ranks[i], ranks[4], ranks[3], ranks[0], 0),
+                2 => (1, ranks[i], ranks[4], ranks[1], ranks[0], 0),
+                3 => (1, ranks[i], ranks[2], ranks[1], ranks[0], 0),
                 _ => unreachable!(),
             };
         }
     }
 
     // High card
-    (1, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
+    (0, ranks[4], ranks[3], ranks[2], ranks[1], ranks[0])
 }
 
+
 // gets players best hand of the 7 cards
+/// this is used for 7 card stud and texas holdem
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' hands with their best hand.
+/// It also handles the display of hands to active players.
 pub async fn update_players_hand(lobby: &Lobby) {
     let mut players = lobby.players.lock().await;
     for player in players.iter_mut() {
@@ -903,12 +1082,12 @@ pub async fn update_players_hand(lobby: &Lobby) {
             player.hand.clone()
         };
         
-        let mut translated_cards: String = Default::default();
-        for (count, card) in player.hand.iter().enumerate() {
-            translated_cards.push_str(&format!("{}. ", count + 1));
-            translated_cards.push_str(translate_card(*card).await.as_str());
-            translated_cards.push_str("\n");
-        }
+        // let mut translated_cards: String = Default::default();
+        // for (count, card) in player.hand.iter().enumerate() {
+        //     translated_cards.push_str(&format!("{}. ", count + 1));
+        //     translated_cards.push_str(translate_card(*card).await.as_str());
+        //     translated_cards.push_str("\n");
+        // }
         // println!("Player {} hand:\n{}", player.name, translated_cards.trim_end_matches(", "));
         
         let best_hand = get_best_hand(&player_hand);
@@ -917,6 +1096,15 @@ pub async fn update_players_hand(lobby: &Lobby) {
     }
 }
 
+/// This function is used to remove the X cards from the players hand
+/// It is used for the final round of 7 card stud where the players have to show their hands
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' hands by removing the X cards.
+/// It also handles the display of hands to active players.
 pub async fn get_rid_of_x(lobby: &Lobby) {
     let mut players = lobby.players.lock().await;
     for player in players.iter_mut() {
@@ -931,6 +1119,19 @@ pub async fn get_rid_of_x(lobby: &Lobby) {
         display_hand(vec![player.tx.clone()], vec![player.hand.clone()]).await;
     }
 }
+
+/// This function is used to handle the blinds for the poker game.
+/// It deducts the small and big blinds from the respective players' wallets,
+/// adds the blinds to the pot,
+/// and sends a message to all players about the blinds paid.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the players' wallets and the pot.
+/// It also handles the display of blinds to all players.
 pub async fn blinds(lobby: &mut Lobby) {
     let mut players = lobby.players.lock().await;
     let small_blind_player_i = (lobby.first_betting_player + 1) % lobby.current_player_count;
@@ -962,6 +1163,18 @@ pub async fn blinds(lobby: &mut Lobby) {
     lobby.lobby_wide_send(players_tx, format!("{} has paid the small blind of {}\n{} has paid the big blind of {}", names[0], small_blind, names[1], big_blind)).await;
 }
 
+/// This function is used to find the next player to start the betting round.
+/// It iterates through the players in the lobby, starting from the dealer index,
+/// and finds the next player who has not folded.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// * `dealer_index` - The index of the dealer player.
+/// 
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the `first_betting_player` field in the `Lobby` struct.
 pub async fn find_next_start(lobby: &mut Lobby, dealer_index: i32) {
     let players = lobby.players.lock().await;
     let mut next_start = 0;
@@ -974,6 +1187,19 @@ pub async fn find_next_start(lobby: &mut Lobby, dealer_index: i32) {
     }
     lobby.first_betting_player = next_start;
 }
+
+/// This function is used to handle the game state machine for a five-card poker game.
+/// It manages the different states of the game, including ante, dealing cards, betting rounds, drawing rounds, and showdown.
+/// 
+/// # Arguments
+/// 
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the game state and player statistics.
+/// It also handles the display of game information to all players.
 pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
     loop {
         match lobby.game_state {
@@ -1034,6 +1260,17 @@ pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
     }
 }
 
+
+/// This function is used to handle the game state machine for a seven-card poker game.
+/// It manages the different states of the game, including dealing cards, betting rounds, and showdown.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the game state and player statistics.
+/// It also handles the display of game information to all players.
 pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
     let mut betting_round_count = 1;
     let mut deal_card_counter = 1;
@@ -1096,6 +1333,10 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
                 lobby.game_state = UPDATE_DB;
             }
             UPDATE_DB => {
+                // let mut players = lobby.players.lock().await;
+                // for player in players.iter_mut() {
+                //     player.current_bet = 0;
+                // }
                 lobby.pot = 0;
                 lobby.update_db().await;
                 break;
@@ -1107,6 +1348,16 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) {
     }
 }
 
+/// This function is used to handle the game state machine for a Texas Hold'em poker game.
+/// It manages the different states of the game, including blinds, dealing cards, betting rounds, and showdown.
+/// 
+/// # Arguments
+/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+/// 
+/// # Returns
+/// 
+/// This function does not return a value. It updates the game state and player statistics.
+/// It also handles the display of game information to all players.
 pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
     let mut betting_round_count = 1;
     let mut deal_card_counter = 1;
@@ -1162,11 +1413,20 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
                 lobby.game_state = END_OF_ROUND;
             }
             END_OF_ROUND => {
+                // clear the community cards
+                let mut community_cards = lobby.community_cards.lock().await;
+                community_cards.clear();
+                // clear players bets
+                let mut players = lobby.players.lock().await;
+                for player in players.iter_mut() {
+                    player.current_bet = 0;
+                }
+                lobby.pot = 0;
+                
                 lobby.first_betting_player = (dealer_index+ 1) % lobby.current_player_count;
                 lobby.game_state = UPDATE_DB;
             }
             UPDATE_DB => {
-                lobby.pot = 0;
                 lobby.update_db().await;
                 break;
             }
@@ -1177,3 +1437,75 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) {
     }
 }
 
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_hand_type_high_card() {
+        let hand = vec![0, 8, 23, 29, 51]; // Ace Hearts 9 Hearts Jack Diamond 4 Spade King Club
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (0, 13, 12, 10, 8, 3));
+    }
+
+    #[test]
+    fn test_get_hand_type_one_pair() {
+        let hand = vec![2, 15, 32, 48, 18]; // 3 Hearts, 3 Diamond, 7 Spade, 10 Club, 6 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (1, 2, 9, 6, 5, 0)); // One pair of 3s, followed by high cards in descending order
+    }
+    #[test]
+    fn test_get_hand_type_two_pair() {
+        let hand = vec![2, 15, 32, 45, 18]; // 3 Hearts, 3 Diamond, 7 Spade, 7 Club, 6 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (2, 6, 2, 5, 0, 0)); // Two pair of 3s and 7s
+    }
+    #[test]
+    fn test_get_hand_type_three_of_a_kind() {
+        let hand = vec![2, 15, 28, 45, 18]; // 3 Hearts, 3 Diamond, 3 Spade, 7 Club, 6 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (3, 2, 6, 5, 0, 0)); // Three of a kind of 3s
+    }
+
+    #[test]
+    fn test_get_hand_type_straight() {
+        let hand = vec![2, 16, 30, 44, 19]; // 3 Hearts, 4 Diamond, 5 Spade, 6 Club, 7 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (4, 6, 0, 0, 0, 0)); // Straight from 3 to 7
+    }
+
+    #[test]
+    fn test_get_hand_type_flush() {
+        let hand = vec![6, 1, 2, 3, 4]; // 7 Hearts, 2 Hearts, 3 Hearts, 4 Hearts, 5 Hearts
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (5, 6, 4, 3, 2, 1)); // Flush with Ace high
+    }
+
+    #[test]
+    fn test_get_hand_type_full_house() {
+        let hand = vec![2, 15, 28, 45, 19]; // 3 Hearts, 3 Diamond, 3 Spade, 7 Club, 7 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (6, 2, 2, 0, 0, 0)); // Full house with three of a kind and a pair
+    }
+
+    #[test]
+    fn test_get_hand_type_four_of_a_kind() {
+        let hand = vec![2, 15, 28, 41, 19]; // 3 Hearts, 3 Diamond, 3 Spade, 3 Club, 7 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (7, 2, 6, 0, 0, 0)); // Four of a kind with three of a kind and a pair
+    }
+
+    #[test]
+    fn test_get_hand_type_straight_flush() {
+        let hand = vec![2, 3, 4, 5, 6]; // 3 Hearts, 4 Hearts, 5 Hearts, 6 Hearts, 7 Hearts
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (8, 6, 6, 0, 0, 0)); // Straight flush from 3 to 7
+    }
+
+    
+
+}
