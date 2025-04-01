@@ -1187,4 +1187,60 @@ mod tests {
         assert_eq!(result, (0, 13, 12, 10, 8, 3));
     }
 
+    #[test]
+    fn test_get_hand_type_one_pair() {
+        let hand = vec![2, 15, 32, 48, 18]; // 3 Hearts, 3 Diamond, 7 Spade, 10 Club, 6 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (1, 2, 9, 6, 5, 0)); // One pair of 3s, followed by high cards in descending order
+    }
+    #[test]
+    fn test_get_hand_type_two_pair() {
+        let hand = vec![2, 15, 32, 45, 18]; // 3 Hearts, 3 Diamond, 7 Spade, 7 Club, 6 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (2, 6, 2, 5, 0, 0)); // Two pair of 3s and 7s
+    }
+    #[test]
+    fn test_get_hand_type_three_of_a_kind() {
+        let hand = vec![2, 15, 28, 45, 18]; // 3 Hearts, 3 Diamond, 3 Spade, 7 Club, 6 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (3, 2, 6, 5, 0, 0)); // Three of a kind of 3s
+    }
+
+    #[test]
+    fn test_get_hand_type_straight() {
+        let hand = vec![2, 16, 30, 44, 19]; // 3 Hearts, 4 Diamond, 5 Spade, 6 Club, 7 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (4, 6, 0, 0, 0, 0)); // Straight from 3 to 7
+    }
+
+    #[test]
+    fn test_get_hand_type_flush() {
+        let hand = vec![6, 1, 2, 3, 4]; // 7 Hearts, 2 Hearts, 3 Hearts, 4 Hearts, 5 Hearts
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (5, 6, 4, 3, 2, 1)); // Flush with Ace high
+    }
+
+    #[test]
+    fn test_get_hand_type_full_house() {
+        let hand = vec![2, 15, 28, 45, 19]; // 3 Hearts, 3 Diamond, 3 Spade, 7 Club, 7 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (6, 2, 2, 0, 0, 0)); // Full house with three of a kind and a pair
+    }
+
+    #[test]
+    fn test_get_hand_type_four_of_a_kind() {
+        let hand = vec![2, 15, 28, 41, 19]; // 3 Hearts, 3 Diamond, 3 Spade, 3 Club, 7 Diamond
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (7, 2, 6, 0, 0, 0)); // Four of a kind with three of a kind and a pair
+    }
+
+    #[test]
+    fn test_get_hand_type_straight_flush() {
+        let hand = vec![2, 3, 4, 5, 6]; // 3 Hearts, 4 Hearts, 5 Hearts, 6 Hearts, 7 Hearts
+        let result = get_hand_type(&hand);
+        assert_eq!(result, (8, 6, 6, 0, 0, 0)); // Straight flush from 3 to 7
+    }
+
+    
+
 }
