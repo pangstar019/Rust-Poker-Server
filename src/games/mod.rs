@@ -759,7 +759,6 @@ fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 7);
     println!("Hand: {:?}", hand);
     let mut best_hand = (-1, -1, -1, -1, -1, -1);
-    let mut best_hand_type = -1;
     for i in 0..=2 {
         for j in (i + 1)..=3 {
             for k in (j + 1)..=4 {
@@ -767,10 +766,9 @@ fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
                     for m in (l + 1)..=6 {
                         let current_hand = vec![hand[i], hand[j], hand[k], hand[l], hand[m]];
                         let current_hand_type = get_hand_type(&current_hand);
-                        if current_hand_type.0 > best_hand_type || (current_hand_type.0 == best_hand_type && current_hand_type.1 > best_hand.1)
+                        if current_hand_type > best_hand
                         {
                             best_hand = current_hand_type;
-                            best_hand_type = current_hand_type.0;
                         }
                     }
                 }

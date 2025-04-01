@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Poker Lobby</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #1a2b3c;
+        color: white;
+        margin: 0;
+        padding: 0;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      h1 {
+        text-align: center;
+        color: #f8c471;
+        margin-bottom: 30px;
+      }
+
+      .lobby-info {
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .player-info {
+        font-size: 18px;
+      }
+
+      .action-panel {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      button {
+        background-color: #2e86c1;
+        color: white;
+        border: none;
+        padding: 12px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+
+      button:hover {
+        background-color: #3498db;
+      }
+
+      button.ready-btn {
+        background-color: #27ae60;
+      }
+
+      button.ready-btn:hover {
+        background-color: #2ecc71;
+      }
+
+      button.quit-btn {
+        background-color: #c0392b;
+      }
+
+      button.quit-btn:hover {
+        background-color: #e74c3c;
+      }
+
+      .panel {
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 20px;
+      }
+
+      .panel-header {
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #f8c471;
+        border-bottom: 1px solid #f8c471;
+        padding-bottom: 5px;
+      }
+
+      .player-list {
+        list-style-type: none;
+        padding: 0;
+      }
+
+      .player-list li {
+        padding: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .player-list li:last-child {
+        border-bottom: none;
+      }
+
+      .player-ready {
+        color: #2ecc71;
+      }
+
+      .player-not-ready {
+        color: #e74c3c;
+      }
+
+      .response {
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 5px;
+        min-height: 30px;
+      }
+
+      .game-rules {
+        white-space: pre-line;
+      }
+
+      .stats-container {
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .stats-item {
+        text-align: center;
+        flex: 1;
+        padding: 10px;
+      }
+
+      .stats-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #f8c471;
+      }
+
+      .stats-label {
+        font-size: 14px;
+        color: #bdc3c7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1 id="lobbyTitle">Game Lobby</h1>
+
+      <div class="lobby-info">
+        <div class="player-info" id="playerCount">Players: 0/0</div>
+        <div class="player-info" id="gameType">Game Type: Loading...</div>
+      </div>
+
+      <div class="response" id="response"></div>
+
+      <div class="action-panel">
+        <button onclick="refreshLobby()" class="refresh-btn">Refresh</button>
+        <button onclick="readyUp()" class="ready-btn" id="readyButton">
+          Ready Up
+        </button>
+        <button onclick="viewStats()" class="stats-btn">View Stats</button>
+        <button onclick="quitLobby()" class="quit-btn">Leave Lobby</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">Players in Lobby</div>
+        <ul class="player-list" id="playerList">
+          <li>Loading players...</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">Game Rules</div>
+        <div class="game-rules" id="gameRules">Loading game rules...</div>
+      </div>
+
+      <div class="panel" id="statsPanel" style="display: none">
+        <div class="panel-header">Your Statistics</div>
+        <div class="stats-container">
+          <div class="stats-item">
+            <div class="stats-value" id="gamesPlayed">0</div>
+            <div class="stats-label">Games Played</div>
+          </div>
+          <div class="stats-item">
+            <div class="stats-value" id="gamesWon">0</div>
+            <div class="stats-label">Games Won</div>
+          </div>
+          <div class="stats-item">
+            <div class="stats-value" id="winRate">0%</div>
+            <div class="stats-label">Win Rate</div>
+          </div>
+          <div class="stats-item">
+            <div class="stats-value" id="wallet">$0</div>
+            <div class="stats-label">Wallet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const responseDiv = document.getElementById("response");
+      const playerCountDiv = document.getElementById("playerCount");
+      const gameTypeDiv = document.getElementById("gameType");
+      const playerListElement = document.getElementById("playerList");
+      const gameRulesDiv = document.getElementById("gameRules");
+      const lobbyTitle = document.getElementById("lobbyTitle");
+      const readyButton = document.getElementById("readyButton");
+      const statsPanel = document.getElementById("statsPanel");
+
+      let isReady = false;
+      let currentLobbyInfo = null;
+
+      // Game rules by type
+      const gameRules = {
+        "5 Card Draw":
+          "5 Card Draw Rules:\n\n1. Each player is dealt 5 cards face down.\n2. First betting round occurs.\n3. Players can discard and replace up to 5 cards.\n4. Second betting round occurs.\n5. Showdown: players reveal their hands and the best hand wins the pot.",
+        "7 Card Stud":
+          "7 Card Stud Rules:\n\n1. Each player is dealt 2 cards face down and 1 card face up.\n2. First betting round starts with the player showing the lowest card.\n3. Three more rounds of cards are dealt face up with betting after each.\n4. Final card is dealt face down.\n5. Final betting round occurs.\n6. Showdown: best 5-card hand from 7 cards wins.",
+        "Texas Hold'em":
+          "Texas Hold'em Rules:\n\n1. Each player is dealt 2 cards face down (hole cards).\n2. First betting round occurs.\n3. Three community cards are dealt face up (the flop).\n4. Second betting round occurs.\n5. Fourth community card is dealt (the turn).\n6. Third betting round occurs.\n7. Fifth community card is dealt (the river).\n8. Final betting round occurs.\n9. Showdown: best 5-card hand using any combination of hole and community cards wins.",
+      };
+
+      window.onload = function () {
+        refreshLobby();
+
+        // Set up periodic refresh
+        setInterval(() => {
+          refreshLobby();
+        }, 5000); // Refresh every 5 seconds
+      };
+
+      // Handle WebSocket messages from parent frame
+      window.addEventListener("message", (event) => {
+        if (event.data.type === "websocket") {
+          handleMessage(event.data.data);
+        }
+      });
+
+      function handleMessage(data) {
+        try {
+          const response = JSON.parse(data);
+          console.log("Message from server:", response);
+
+          if (response.message) {
+            responseDiv.innerText = response.message;
+            setTimeout(() => {
+              responseDiv.innerText = "";
+            }, 5000);
+          }
+
+          if (response.redirect) {
+            window.location.href = response.redirect;
+          }
+
+          // Handle player list
+          if (response.players) {
+            updatePlayerList(response.players);
+          }
+
+          // Handle lobby info
+          if (response.lobbyInfo) {
+            updateLobbyInfo(response.lobbyInfo);
+          }
+
+          // Handle stats
+          if (response.stats) {
+            updateStats(response.stats);
+            statsPanel.style.display = "block";
+          }
+        } catch (e) {
+          console.error("Error parsing message:", e);
+        }
+      }
+
+      function updatePlayerList(players) {
+        playerListElement.innerHTML = "";
+
+        if (players.length === 0) {
+          playerListElement.innerHTML = "<li>No players in lobby</li>";
+          return;
+        }
+
+        players.forEach((player) => {
+          const li = document.createElement("li");
+          li.innerHTML = `${player.name} <span class="${
+            player.ready ? "player-ready" : "player-not-ready"
+          }">(${player.ready ? "Ready" : "Not Ready"})</span>`;
+          playerListElement.appendChild(li);
+        });
+      }
+
+      function updateLobbyInfo(info) {
+        currentLobbyInfo = info;
+        lobbyTitle.textContent = info.name;
+        playerCountDiv.textContent = `Players: ${info.playerCount}/${info.maxPlayers}`;
+        gameTypeDiv.textContent = `Game Type: ${info.gameType}`;
+
+        // Update game rules
+        if (gameRules[info.gameType]) {
+          gameRulesDiv.textContent = gameRules[info.gameType];
+        } else {
+          gameRulesDiv.textContent =
+            "Rules for this game type are not available.";
+        }
+      }
+
+      function updateStats(stats) {
+        document.getElementById("gamesPlayed").textContent = stats.gamesPlayed;
+        document.getElementById("gamesWon").textContent = stats.gamesWon;
+        document.getElementById("wallet").textContent = `$${stats.wallet}`;
+
+        // Calculate win rate
+        const winRate =
+          stats.gamesPlayed > 0
+            ? Math.round((stats.gamesWon / stats.gamesPlayed) * 100)
+            : 0;
+        document.getElementById("winRate").textContent = `${winRate}%`;
+      }
+
+      function readyUp() {
+        sendToServer(JSON.stringify({ action: "Ready" }));
+        isReady = !isReady;
+        readyButton.textContent = isReady ? "Cancel Ready" : "Ready Up";
+        readyButton.style.backgroundColor = isReady ? "#c0392b" : "#27ae60";
+      }
+
+      function viewStats() {
+        sendToServer(JSON.stringify({ action: "ShowStats" }));
+      }
+
+      function quitLobby() {
+        sendToServer(JSON.stringify({ action: "Quit" }));
+      }
+
+      function refreshLobby() {
+        sendToServer(JSON.stringify({ action: "ShowPlayers" }));
+        // Also request lobby info if needed
+        sendToServer(JSON.stringify({ action: "LobbyInfo" }));
+      }
+
+      // Send messages through parent using postMessage
+      function sendToServer(message) {
+        window.parent.postMessage(
+          {
+            type: "sendWebSocket",
+            data: message,
+          },
+          "*"
+        );
+      }
+    </script>
+  </body>
+</html>

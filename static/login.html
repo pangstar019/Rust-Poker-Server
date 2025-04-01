@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Poker Login</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f0f0f0;
+        padding: 40px;
+      }
+      input,
+      button {
+        padding: 10px;
+        margin: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Poker Server - Login / Register</h1>
+    <input type="text" id="username" placeholder="Enter username" required />
+    <button onclick="login()">Login</button>
+    <button onclick="registerUser()">Register</button>
+    <div id="message"></div>
+
+    <script>
+      const messageDiv = document.getElementById("message");
+
+      // Listen for messages from parent frame
+      window.addEventListener("message", (event) => {
+        if (event.data.type === "websocket") {
+          handleMessage(event.data.data);
+        }
+      });
+
+      function handleMessage(data) {
+        console.log("Message from server: ", data);
+        try {
+          const response = JSON.parse(data);
+          if (response.message) {
+            messageDiv.innerText = response.message;
+          }
+          if (response.redirect) {
+            // Navigate using parent frame
+            window.parent.navigate(response.redirect);
+          }
+        } catch (e) {
+          console.error("Invalid JSON", e);
+        }
+      }
+
+      // Send messages through parent using postMessage
+      function sendToServer(message) {
+        window.parent.postMessage(
+          {
+            type: "sendWebSocket",
+            data: message,
+          },
+          "*"
+        );
+      }
+
+      function login() {
+        const username = document.getElementById("username").value;
+        sendToServer(JSON.stringify({ action: "Login", data: { username } }));
+      }
+
+      function registerUser() {
+        const username = document.getElementById("username").value;
+        sendToServer(
+          JSON.stringify({ action: "Register", data: { username } })
+        );
+      }
+    </script>
+  </body>
+</html>

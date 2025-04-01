@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Server Lobby</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #2c3e50;
+        color: #ecf0f1;
+        padding: 20px;
+      }
+      .lobby-info {
+        background: #34495e;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+      }
+      #playerCount {
+        font-size: 1.2em;
+        margin-bottom: 15px;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 5px;
+        background: #3498db;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #2980b9;
+      }
+      .lobby-list {
+        background: #34495e;
+        padding: 15px;
+        border-radius: 5px;
+        margin-top: 20px;
+      }
+      .lobby-list-header {
+        font-size: 1.2em;
+        margin-bottom: 10px;
+        font-weight: bold;
+      }
+      .lobby-item {
+        padding: 8px;
+        margin: 5px 0;
+        background: #2c3e50;
+        border-radius: 3px;
+      }
+      .lobby-details {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .lobby-name {
+        font-weight: bold;
+      }
+      .lobby-type {
+        color: #95a5a6;
+      }
+      .lobby-status {
+        color: #2ecc71;
+      }
+      .lobby-buttons {
+        text-align: right;
+      }
+      .lobby-join-btn {
+        background: #2ecc71;
+        padding: 5px 10px;
+        font-size: 0.9em;
+      }
+      .lobby-join-btn:hover {
+        background: #27ae60;
+      }
+      .lobby-spectate-btn {
+        background: #95a5a6;
+        padding: 5px 10px;
+        font-size: 0.9em;
+      }
+      .lobby-spectate-btn:hover {
+        background: #7f8c8d;
+      }
+      .refresh-btn {
+        background: #2ecc71;
+      }
+      .refresh-btn:hover {
+        background: #27ae60;
+      }
+
+      /* Modal styling */
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+      }
+      .modal-content {
+        background-color: #34495e;
+        margin: 15% auto;
+        padding: 20px;
+        border-radius: 5px;
+        width: 300px;
+      }
+      .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+      }
+      .close:hover,
+      .close:focus {
+        color: white;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+      }
+      .form-group input,
+      .form-group select {
+        width: 100%;
+        padding: 8px;
+        box-sizing: border-box;
+        background-color: #2c3e50;
+        color: #ecf0f1;
+        border: 1px solid #3498db;
+        border-radius: 3px;
+      }
+      .form-group select option {
+        background-color: #2c3e50;
+      }
+      .error-message {
+        color: #e74c3c;
+        margin-top: 10px;
+        font-size: 0.9em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Server Lobby</h1>
+    <div class="lobby-info">
+      <div id="playerCount">Players Online: 0</div>
+      <div id="response"></div>
+    </div>
+    <button onclick="openCreateLobbyModal()">Create Game Lobby</button>
+    <button onclick="viewStats()">View Stats</button>
+    <button onclick="refreshLobbies()" class="refresh-btn">
+      Refresh Lobbies
+    </button>
+
+    <div class="lobby-list">
+      <div class="lobby-list-header">Available Game Lobbies</div>
+      <div id="lobbyList">Loading lobbies...</div>
+    </div>
+
+    <!-- Create Lobby Modal -->
+    <div id="createLobbyModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="closeCreateLobbyModal()">&times;</span>
+        <h2>Create New Game Lobby</h2>
+        <div class="form-group">
+          <label for="lobbyName">Lobby Name:</label>
+          <input type="text" id="lobbyName" placeholder="Enter lobby name" />
+        </div>
+        <div class="form-group">
+          <label for="gameType">Game Type:</label>
+          <select id="gameType">
+            <option value="1">5 Card Draw</option>
+            <option value="2">7 Card Stud</option>
+            <option value="3">Texas Hold'em</option>
+          </select>
+        </div>
+        <div id="createLobbyError" class="error-message"></div>
+        <button onclick="submitCreateLobby()">Create Lobby</button>
+      </div>
+    </div>
+
+    <script>
+      const playerCountDiv = document.getElementById("playerCount");
+      const lobbyListDiv = document.getElementById("lobbyList");
+      const responseDiv = document.getElementById("response");
+      const createLobbyModal = document.getElementById("createLobbyModal");
+      const createLobbyError = document.getElementById("createLobbyError");
+
+      window.onload = function () {
+        refreshPlayers();
+        refreshLobbies();
+
+        // Set up periodic refresh
+        setInterval(() => {
+          refreshPlayers();
+          refreshLobbies();
+        }, 10000); // Refresh every 10 seconds
+      };
+
+      window.addEventListener("message", (event) => {
+        if (event.data.type === "websocket") {
+          handleMessage(event.data.data);
+        }
+      });
+
+      function handleMessage(data) {
+        console.log("Message from server: ", data);
+        try {
+          const response = JSON.parse(data);
+          if (response.message) {
+            responseDiv.innerText = response.message;
+            setTimeout(() => {
+              responseDiv.innerText = "";
+            }, 5000); // Clear message after 5 seconds
+          }
+          if (response.playerCount) {
+            playerCountDiv.innerText = `Players Online: ${response.playerCount}`;
+          }
+          if (response.redirect) {
+            window.location.href = response.redirect;
+          }
+          if (response.lobbies) {
+            displayLobbies(response.lobbies);
+          }
+          if (response.error) {
+            createLobbyError.innerText = response.error;
+          }
+        } catch (e) {
+          console.error("Invalid JSON", e);
+        }
+      }
+
+      function displayLobbies(lobbies) {
+        if (lobbies.length === 0) {
+          lobbyListDiv.innerHTML = "<p>No active lobbies at the moment.</p>";
+          return;
+        }
+
+        let lobbyHTML = "";
+        lobbies.forEach((lobby) => {
+          const isJoinable =
+            lobby.status === "Joinable" && lobby.playerCount < lobby.maxPlayers;
+          const statusText = isJoinable
+            ? `<span class="lobby-status">${lobby.status}</span>`
+            : `<span style="color: #e74c3c;">${lobby.status}</span>`;
+
+          // Only show join button if the lobby is joinable
+          const joinButton = isJoinable
+            ? `<button class="lobby-join-btn" onclick="joinLobby('${lobby.name}', false)">Join</button>`
+            : "";
+
+          lobbyHTML += `
+                <div class="lobby-item">
+                    <div class="lobby-details">
+                        <div>
+                            <span class="lobby-name">${lobby.name}</span> 
+                            <span class="lobby-type">(${lobby.type})</span>
+                        </div>
+                        <div>
+                            Players: ${lobby.playerCount} / ${lobby.maxPlayers} | ${statusText}
+                        </div>
+                    </div>
+                    <div class="lobby-buttons">
+                        ${joinButton}
+                        <button class="lobby-spectate-btn" onclick="joinLobby('${lobby.name}', true)">Spectate</button>
+                    </div>
+                </div>`;
+        });
+        lobbyListDiv.innerHTML = lobbyHTML;
+      }
+
+      // Send messages through parent using postMessage
+      function sendToServer(message) {
+        window.parent.postMessage(
+          {
+            type: "sendWebSocket",
+            data: message,
+          },
+          "*"
+        );
+      }
+
+      function refreshPlayers() {
+        sendToServer(JSON.stringify({ action: "ShowPlayers" }));
+      }
+
+      function refreshLobbies() {
+        sendToServer(JSON.stringify({ action: "ShowLobbies" }));
+        lobbyListDiv.innerHTML = "Loading lobbies...";
+      }
+
+      function openCreateLobbyModal() {
+        createLobbyModal.style.display = "block";
+        createLobbyError.innerText = "";
+        document.getElementById("lobbyName").value = "";
+      }
+
+      function closeCreateLobbyModal() {
+        createLobbyModal.style.display = "none";
+      }
+
+      function submitCreateLobby() {
+        const lobbyName = document.getElementById("lobbyName").value.trim();
+        const gameType = document.getElementById("gameType").value;
+        console.log(gameType);
+
+        if (!lobbyName) {
+          createLobbyError.innerText = "Please enter a lobby name";
+          return;
+        }
+
+        // Close the modal
+        closeCreateLobbyModal();
+
+        // Send the create lobby request to the server
+        sendToServer(
+          JSON.stringify({
+            action: "CreateLobby",
+            data: {
+              lobby_name: lobbyName,
+              game_type: parseInt(gameType) + 9,
+            },
+          })
+        );
+      }
+
+      function joinLobby(lobbyName, spectate) {
+        sendToServer(
+          JSON.stringify({
+            action: "JoinLobby",
+            data: {
+              lobby_name: lobbyName,
+              spectate: spectate,
+            },
+          })
+        );
+      }
+
+      function viewStats() {
+        sendToServer(JSON.stringify({ action: "ShowStats" }));
+      }
+
+      // Close modal if user clicks outside of it
+      window.onclick = function (event) {
+        if (event.target === createLobbyModal) {
+          closeCreateLobbyModal();
+        }
+      };
+    </script>
+  </body>
+</html>

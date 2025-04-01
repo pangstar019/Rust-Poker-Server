@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Poker Game</title>
+    <style>
+      body,
+      html,
+      iframe {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        border: none;
+        overflow: hidden;
+      }
+    </style>
+    <script>
+      // Global WebSocket connection
+      const wsProtocol =
+        window.location.protocol === "https:" ? "wss://" : "ws://";
+      const wsAddr = wsProtocol + window.location.hostname + ":1112/connect";
+      const socket = new WebSocket(wsAddr);
+      console.log("client connected to server");
+
+      // Handle navigation between pages
+      function navigate(page) {
+        document.getElementById("gameFrame").src = `/${page}`;
+      }
+
+      // Forward messages to current frame
+      socket.onmessage = (event) => {
+        const frame = document.getElementById("gameFrame");
+        if (frame && frame.contentWindow) {
+          frame.contentWindow.postMessage(
+            {
+              type: "websocket",
+              data: event.data,
+            },
+            "*"
+          );
+        }
+      };
+
+      // Listen for messages from iframe
+      window.addEventListener("message", (event) => {
+        if (event.data.type === "sendWebSocket") {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(event.data.data);
+          } else {
+            console.error("WebSocket is not open");
+          }
+        }
+      });
+
+      // Detect when user is leaving the page
+      window.addEventListener("beforeunload", function () {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          // Send a disconnect message to the server
+          socket.send(JSON.stringify({ action: "Disconnect" }));
+        }
+      });
+
+      // Initialize to login page
+      window.onload = function () {
+        navigate("login");
+      };
+    </script>
+  </head>
+  <body>
+    <iframe id="gameFrame" src="" allowfullscreen="true"></iframe>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Player Statistics</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #222; color: #eee; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #555; padding: 8px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Player Statistics</h1>
+  <table id="statsTable">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Games Played</th>
+        <th>Games Won</th>
+        <th>Wallet</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Data will be inserted dynamically -->
+    </tbody>
+  </table>
+  <button onclick="goBack()">Back to Lobby</button>
+
+  <script>
+    const statsTable = document.getElementById("statsTable").getElementsByTagName("tbody")[0];
+
+    socket.onopen = () => {
+      socket.send("stats:get");
+    };
+
+    socket.onmessage = event => {
+      // Assuming the server sends statistics in a JSON format.
+      try {
+        const data = JSON.parse(event.data);
+        // Empty the table.
+        statsTable.innerHTML = "";
+        data.forEach(player => {
+          const row = document.createElement("tr");
+          row.innerHTML = `<td>${player.name}</td><td>${player.games_played}</td><td>${player.games_won}</td><td>$${player.wallet}</td>`;
+          statsTable.appendChild(row);
+        });
+      } catch (e) {
+        // Not a JSON message – check if it is a redirect.
+        if(event.data.startsWith("redirect:")) {
+          const target = event.data.split(":")[1].trim();
+          window.location.href = target + ".html";
+        }
+      }
+    };
+
+    function goBack() {
+      window.location.href = "lobby.html";
+    }
+  </script>
+</body>
+</html>
