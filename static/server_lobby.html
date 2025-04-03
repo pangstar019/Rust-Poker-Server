@@ -82,12 +82,6 @@
       .lobby-spectate-btn:hover {
         background: #7f8c8d;
       }
-      .refresh-btn {
-        background: #2ecc71;
-      }
-      .refresh-btn:hover {
-        background: #27ae60;
-      }
 
       /* Modal styling */
       .modal {
@@ -154,9 +148,6 @@
     </div>
     <button onclick="openCreateLobbyModal()">Create Game Lobby</button>
     <button onclick="viewStats()">View Stats</button>
-    <button onclick="refreshLobbies()" class="refresh-btn">
-      Refresh Lobbies
-    </button>
 
     <div class="lobby-list">
       <div class="lobby-list-header">Available Game Lobbies</div>
@@ -252,7 +243,7 @@
 
           // Only show join button if the lobby is joinable
           const joinButton = isJoinable
-            ? `<button class="lobby-join-btn" onclick="joinLobby('${lobby.name}', false)">Join</button>`
+            ? `<button class="lobby-join-btn" onclick="joinLobby('${lobby.name.replace(/'/g, "\\'")}', '${lobby.type.replace(/'/g, "\\'")}', false)">Join</button>`
             : "";
 
           lobbyHTML += `
@@ -268,7 +259,7 @@
                     </div>
                     <div class="lobby-buttons">
                         ${joinButton}
-                        <button class="lobby-spectate-btn" onclick="joinLobby('${lobby.name}', true)">Spectate</button>
+                        <button class="lobby-spectate-btn" onclick="joinLobby('${lobby.name.replace(/'/g, "\\'")}', '${lobby.type.replace(/'/g, "\\'")}', true)">Spectate</button>
                     </div>
                 </div>`;
         });
@@ -330,7 +321,11 @@
         );
       }
 
-      function joinLobby(lobbyName, spectate) {
+      function joinLobby(lobbyName, gameType, spectate) {
+        // Store the game type in localStorage before navigating
+        localStorage.setItem('currentGameType', gameType);
+        
+        // Send the join request to the server
         sendToServer(
           JSON.stringify({
             action: "JoinLobby",

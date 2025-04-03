@@ -81,6 +81,7 @@ enum ClientMessage {
     ShowLobbies,
     ShowStats,
     ShowPlayers,
+    ShowLobbyInfo,
     ShowHand,
     // Add additional actions as needed.
 }
@@ -488,6 +489,11 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                 
                 if lobby_state == lobby::JOINABLE || lobby_state == lobby::GAME_LOBBY_FULL {
                     match client_msg {
+                        Ok(ClientMessage::Disconnect) => {
+                            server_lobby.lock().await.remove_player(player.name.clone()).await;
+                            server_lobby.lock().await.broadcast_player_count().await;
+                            return "disconnect".to_string();
+                        }
                         Ok(ClientMessage::Quit) => {
                             // QUIT LOBBY - Return to server lobby
                             let lobby_status = player_lobby.lock().await.remove_player(player.name.clone()).await;
@@ -516,7 +522,9 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                             
                             return "Disconnect".to_string();
                         }
-                        Ok(ClientMessage::ShowPlayers) => {
+                        Ok(ClientMessage::ShowLobbyInfo) => {
+                            // Send lobby information to client
+                            send_lobby_info(&player_lobby, &tx).await;
                             // Update player list
                             send_player_list(&player_lobby, &tx).await;
                         }
@@ -629,9 +637,9 @@ async fn send_lobby_info(player_lobby: &Arc<Mutex<Lobby>>, tx: &mpsc::UnboundedS
     
     let player_count = lobby.get_player_count().await;
     let max_players = match lobby.game_type {
-        lobby::FIVE_CARD_DRAW => 6,
+        lobby::FIVE_CARD_DRAW => 5,
         lobby::SEVEN_CARD_STUD => 7,
-        lobby::TEXAS_HOLD_EM => 9,
+        lobby::TEXAS_HOLD_EM => 10,
         _ => 10
     };
     

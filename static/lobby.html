@@ -146,6 +146,49 @@
         font-size: 14px;
         color: #bdc3c7;
       }
+
+      /* Rules modal styling */
+      .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        z-index: 100;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .modal-content {
+        background-color: #2c3e50;
+        border-radius: 8px;
+        width: 80%;
+        max-width: 800px;
+        max-height: 80vh;
+        padding: 20px;
+        position: relative;
+      }
+
+      .close-button {
+        position: absolute;
+        top: 10px;
+        right: 15px;
+        font-size: 24px;
+        color: #e74c3c;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+      }
+
+      .rules-iframe {
+        width: 100%;
+        height: 500px;
+        border: none;
+        background-color: white;
+      }
     </style>
   </head>
   <body>
@@ -160,11 +203,13 @@
       <div class="response" id="response"></div>
 
       <div class="action-panel">
-        <button onclick="refreshLobby()" class="refresh-btn">Refresh</button>
         <button onclick="readyUp()" class="ready-btn" id="readyButton">
           Ready Up
         </button>
-        <button onclick="viewStats()" class="stats-btn">View Stats</button>
+        <button onclick="refreshStats()" class="stats-btn">
+          Refresh Stats
+        </button>
+        <button onclick="showRules()" class="rules-btn">Rules</button>
         <button onclick="quitLobby()" class="quit-btn">Leave Lobby</button>
       </div>
 
@@ -176,11 +221,6 @@
       </div>
 
       <div class="panel">
-        <div class="panel-header">Game Rules</div>
-        <div class="game-rules" id="gameRules">Loading game rules...</div>
-      </div>
-
-      <div class="panel" id="statsPanel" style="display: none">
         <div class="panel-header">Your Statistics</div>
         <div class="stats-container">
           <div class="stats-item">
@@ -203,32 +243,48 @@
       </div>
     </div>
 
+    <!-- Rules Modal -->
+    <div id="rulesModal" class="modal">
+      <div class="modal-content">
+        <button class="close-button" onclick="closeRules()">&times;</button>
+        <h2>Game Rules</h2>
+        <iframe id="rulesFrame" class="rules-iframe" src="about:blank"></iframe>
+      </div>
+    </div>
+
     <script>
       const responseDiv = document.getElementById("response");
       const playerCountDiv = document.getElementById("playerCount");
       const gameTypeDiv = document.getElementById("gameType");
       const playerListElement = document.getElementById("playerList");
-      const gameRulesDiv = document.getElementById("gameRules");
       const lobbyTitle = document.getElementById("lobbyTitle");
       const readyButton = document.getElementById("readyButton");
-      const statsPanel = document.getElementById("statsPanel");
+      const rulesModal = document.getElementById("rulesModal");
+      const rulesFrame = document.getElementById("rulesFrame");
 
       let isReady = false;
       let currentLobbyInfo = null;
 
-      // Game rules by type
-      const gameRules = {
-        "5 Card Draw":
-          "5 Card Draw Rules:\n\n1. Each player is dealt 5 cards face down.\n2. First betting round occurs.\n3. Players can discard and replace up to 5 cards.\n4. Second betting round occurs.\n5. Showdown: players reveal their hands and the best hand wins the pot.",
-        "7 Card Stud":
-          "7 Card Stud Rules:\n\n1. Each player is dealt 2 cards face down and 1 card face up.\n2. First betting round starts with the player showing the lowest card.\n3. Three more rounds of cards are dealt face up with betting after each.\n4. Final card is dealt face down.\n5. Final betting round occurs.\n6. Showdown: best 5-card hand from 7 cards wins.",
-        "Texas Hold'em":
-          "Texas Hold'em Rules:\n\n1. Each player is dealt 2 cards face down (hole cards).\n2. First betting round occurs.\n3. Three community cards are dealt face up (the flop).\n4. Second betting round occurs.\n5. Fourth community card is dealt (the turn).\n6. Third betting round occurs.\n7. Fifth community card is dealt (the river).\n8. Final betting round occurs.\n9. Showdown: best 5-card hand using any combination of hole and community cards wins.",
+      // Update the game rule URLs to use Wikipedia
+      const gameRuleUrls = {
+        "5 Card Draw": "https://en.wikipedia.org/wiki/Five-card_draw",
+        "7 Card Stud": "https://en.wikipedia.org/wiki/Seven-card_stud",
+        "Texas Hold'em": "https://en.wikipedia.org/wiki/Texas_hold_%27em"
       };
 
       window.onload = function () {
-        refreshLobby();
-
+        // Check if we have a stored game type from the server lobby
+        const storedGameType = localStorage.getItem('currentGameType');
+        if (storedGameType) {
+          console.log("Found stored game type:", storedGameType);
+          // Initialize currentLobbyInfo with the stored game type
+          currentLobbyInfo = currentLobbyInfo || {};
+          currentLobbyInfo.gameType = storedGameType;
+        }
+        
+        refreshLobbyInfo();
+        refreshStats();
+      
         // Set up periodic refresh
         setInterval(() => {
           refreshLobby();
@@ -271,7 +327,6 @@
           // Handle stats
           if (response.stats) {
             updateStats(response.stats);
-            statsPanel.style.display = "block";
           }
         } catch (e) {
           console.error("Error parsing message:", e);
@@ -300,14 +355,15 @@
         lobbyTitle.textContent = info.name;
         playerCountDiv.textContent = `Players: ${info.playerCount}/${info.maxPlayers}`;
         gameTypeDiv.textContent = `Game Type: ${info.gameType}`;
-
-        // Update game rules
-        if (gameRules[info.gameType]) {
-          gameRulesDiv.textContent = gameRules[info.gameType];
-        } else {
-          gameRulesDiv.textContent =
-            "Rules for this game type are not available.";
+        
+        // Save game type to localStorage when we get it from the server
+        if (info.gameType) {
+          localStorage.setItem('currentGameType', info.gameType);
+          console.log("Saved game type to localStorage:", info.gameType);
         }
+        
+        // Add debugging output
+        debugLobbyInfo();
       }
 
       function updateStats(stats) {
@@ -330,18 +386,69 @@
         readyButton.style.backgroundColor = isReady ? "#c0392b" : "#27ae60";
       }
 
-      function viewStats() {
+      function refreshStats() {
         sendToServer(JSON.stringify({ action: "ShowStats" }));
       }
 
       function quitLobby() {
+        // Clear the stored game type when leaving the lobby
+        localStorage.removeItem('currentGameType');
         sendToServer(JSON.stringify({ action: "Quit" }));
       }
 
-      function refreshLobby() {
-        sendToServer(JSON.stringify({ action: "ShowPlayers" }));
-        // Also request lobby info if needed
-        sendToServer(JSON.stringify({ action: "LobbyInfo" }));
+      function refreshLobbyInfo() {
+        sendToServer(JSON.stringify({ action: "ShowLobbyInfo" }));
+      }
+
+      function showRules() {
+        // First try to get game type from currentLobbyInfo
+        let gameType = currentLobbyInfo?.gameType;
+        
+        // If not available, try localStorage
+        if (!gameType) {
+          gameType = localStorage.getItem('currentGameType');
+        }
+        
+        console.log("Getting rules for game type:", gameType);
+        
+        let ruleUrl = "https://en.wikipedia.org/wiki/Five-card_draw"; // Default
+        
+        if (gameType) {
+          // Direct match with our known types
+          if (gameRuleUrls[gameType]) {
+            ruleUrl = gameRuleUrls[gameType];
+            console.log("Direct match found for game type:", gameType);
+          } 
+          // Try Texas Hold'em with different variations
+          else if (gameType.toLowerCase().includes("texas") || gameType.toLowerCase().includes("hold")) {
+            ruleUrl = "https://en.wikipedia.org/wiki/Texas_hold_%27em";
+            console.log("Texas Hold'em variation detected");
+          }
+          // Try 7 Card Stud with different variations  
+          else if (gameType.toLowerCase().includes("7") || gameType.toLowerCase().includes("stud")) {
+            ruleUrl = "https://en.wikipedia.org/wiki/Seven-card_stud";
+            console.log("7 Card Stud variation detected");
+          }
+          // Try 5 Card Draw with different variations
+          else if (gameType.toLowerCase().includes("5") || gameType.toLowerCase().includes("draw")) {
+            ruleUrl = "https://en.wikipedia.org/wiki/Five-card_draw";
+            console.log("5 Card Draw variation detected");
+          }
+          else {
+            console.log("No specific match found for type:", gameType);
+          }
+        } else {
+          console.log("No game type available, using default rules");
+        }
+        
+        // Set the iframe source to the Wikipedia URL
+        console.log("Setting iframe src to:", ruleUrl);
+        rulesFrame.src = ruleUrl;
+        rulesModal.style.display = "flex";
+      }
+
+      function closeRules() {
+        rulesModal.style.display = "none";
       }
 
       // Send messages through parent using postMessage
@@ -353,6 +460,22 @@
           },
           "*"
         );
+      }
+
+      // Close rules modal when clicking outside of it
+      window.onclick = function (event) {
+        if (event.target === rulesModal) {
+          closeRules();
+        }
+      };
+
+      // Add this function for debugging purposes
+      function debugLobbyInfo() {
+        console.log("Current Lobby Info:", currentLobbyInfo);
+        if (currentLobbyInfo && currentLobbyInfo.gameType) {
+          console.log("Game Type:", currentLobbyInfo.gameType);
+          console.log("Game Rule URL:", gameRuleUrls[currentLobbyInfo.gameType] || "Not found");
+        }
       }
     </script>
   </body>
