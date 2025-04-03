@@ -82,6 +82,8 @@ enum ClientMessage {
     ShowStats,
     ShowPlayers,
     ShowLobbyInfo,
+    StartGame,
+    UpdateInput,
     ShowHand,
     // Add additional actions as needed.
 }
@@ -315,8 +317,8 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
                             return;
                         }
                         _ => {
-                            // For unsupported actions before login/registration:
-                            tx.send(Message::text(r#"{"message": "Unsupported action during login phase."}"#)).unwrap();
+                            // For unsupported actions before login/registration: disregard
+                            continue;
                         }
                     }
                 }
@@ -363,14 +365,11 @@ async fn handle_server_lobby(mut player: Player, server_lobby: Arc<Mutex<Lobby>>
                 None => continue,
             }
         };
-        println!("reached here");
-        
-        println!("Received message: {:?}", result);
+
         if let Ok(msg) = result {
             if let Ok(text) = msg.to_str() {
                 // Attempt to parse the incoming JSON message.
                 let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
-                println!("Received message: {}", text);
                 match client_msg {
                     Ok(ClientMessage::Disconnect) => {
                         server_lobby.lock().await.remove_player(player.name.clone()).await;
@@ -445,8 +444,8 @@ async fn handle_server_lobby(mut player: Player, server_lobby: Arc<Mutex<Lobby>>
                         }
                     }
                     _ => {
-                        // For unsupported actions after login/registration:
-                        tx.send(Message::text(r#"{"message": "Unsupported action after login."}"#)).unwrap();
+                        // For unsupported actions after login/registration: disregard
+                        continue;
                     }
                 }
             }
@@ -469,6 +468,7 @@ async fn handle_server_lobby(mut player: Player, server_lobby: Arc<Mutex<Lobby>>
 /// 
 /// This function returns a `String` indicating the exit status of the player.
 async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc<Database>, spectator: bool) -> String {
+    player.ready = false;
     player.state = lobby::IN_LOBBY;
     let player_lobby = player.lobby.clone();
     let tx = player.tx.clone();
@@ -491,11 +491,9 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
             if let Ok(text) = msg.to_str() {
                 // Attempt to parse the incoming JSON message
                 let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
-                println!("Received message in lobby: {}", text);
                 
                 let lobby_state = player_lobby.lock().await.game_state.clone();
                 let lobby_name = player_lobby.lock().await.name.clone();
-                println!("Lobby {} state: {}", lobby_name, lobby_state);
 
                 match client_msg {
                     Ok(ClientMessage::Quit) => {
@@ -544,63 +542,11 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                     }
                     Ok(ClientMessage::Ready) => {
                         // READY UP
-                        let mut all_ready = 0;
-                        player.ready = !player.ready; // Toggle ready status
-                        
                         let (ready_player_count, lobby_player_count) = 
-                            player_lobby.lock().await.ready_up(player.name.clone()).await;
+                            player_lobby.lock().await.check_ready(player.name.clone()).await;                    
                         
                         // Update all clients with the new player list
-                        // Create player list message and broadcast it to all players
-                        let player_info = player_lobby.lock().await.get_player_names_and_status().await;
-                        let mut players = Vec::new();
-                        for (name, ready) in player_info {
-                            players.push(serde_json::json!({
-                                "name": name,
-                                "ready": ready
-                            }));
-                        }
-                        
-                        let player_list = serde_json::json!({
-                            "players": players
-                        });
-                        
-                        player_lobby.lock().await.broadcast_json(player_list.to_string()).await;
-                        
-                        if ready_player_count == lobby_player_count && lobby_player_count >= 2 {
-                            all_ready = 1;
-                            
-                            // Send notification that all players are ready
-                            let msg = serde_json::json!({
-                                "message": "All players ready. Starting game..."
-                            });
-                            player_lobby.lock().await.broadcast_json(msg.to_string()).await;
-                            
-                            sleep(Duration::from_secs(2)).await;
-                            
-                            // Start the game
-                            player_lobby.lock().await.game_state = lobby::START_OF_ROUND;
-
-
-                            /*  Start the game  */
-
-
-
-                            /*                  */
-
-                        } else if lobby_player_count < 2 {
-                            // Not enough players
-                            let msg = serde_json::json!({
-                                "message": "Need at least 2 players to start the game"
-                            });
-                            tx.send(Message::text(msg.to_string())).unwrap();
-                        } else {
-                            // Not all players are ready
-                            let msg = serde_json::json!({
-                                "message": format!("Players ready: {}/{}", ready_player_count, lobby_player_count)
-                            });
-                            tx.send(Message::text(msg.to_string())).unwrap();
-                        }
+                        send_player_list(&player_lobby).await;
                     }
                     Ok(ClientMessage::ShowStats) => {
                         // Get and send player stats
@@ -619,9 +565,52 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                             tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
                         }
                     }
+                    Ok(ClientMessage::StartGame) => {
+                        // Start the game
+                        let game_type = player_lobby.lock().await.game_type.clone();
+                        let mut status = "".to_string();
+                        match game_type {
+                            lobby::FIVE_CARD_DRAW => {
+                                // Initialize game state for 5 Card Draw
+                                status = games::five_card_game_state_machine(&mut player).await;
+                            }
+                            lobby::SEVEN_CARD_STUD => {
+                                // Initialize game state for 7 Card Stud
+                                // status = games::seven_card_game_state_machine(&mut player).await;
+
+                            }
+                            lobby::TEXAS_HOLD_EM => {
+                                // Initialize game state for Texas Hold'em
+                                // status = games::texas_holdem_game_state_machine(&mut player).await;
+
+                            }
+                            _ => {
+                                // Unsupported game type: disregard
+                                continue;
+                            }
+                        }
+                        
+                        if status == "Disconnect" {
+                            // Player disconnected during game
+                            let lobby_status = player_lobby.lock().await.remove_player(player.name.clone()).await;
+                            if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                                server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
+                            } else {
+                                server_lobby.lock().await.update_lobby_names_status(lobby_name.clone()).await;
+                            }
+                            server_lobby.lock().await.broadcast_player_count().await;
+                            
+                            // Update player stats
+                            if let Err(e) = db.update_player_stats(&player).await {
+                                eprintln!("Failed to update player stats: {}", e);
+                            }
+                            
+                            return "Disconnect".to_string();
+                        }
+                    }
                     _ => {
-                        // Unsupported action in lobby
-                        tx.send(Message::text(r#"{"message": "Unsupported action in lobby"}"#)).unwrap();
+                        // Unsupported action in lobby: disregard
+                        continue;
                     }
                 }
             }

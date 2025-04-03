@@ -479,11 +479,11 @@ impl Lobby {
         }
     }
 
-    pub async fn ready_up(&self, username: String) -> (i32, i32) {
+    pub async fn check_ready(&self, username: String) -> (i32, i32) {
         let mut players = self.players.lock().await;
         // self.broadcast(format!("{} is ready!", username)).await;
         if let Some(player) = players.iter_mut().find(|p| p.name == username) {
-            player.ready = true;
+            player.ready = !player.ready;
         }
         let mut ready_player_count = 0;
         for player in players.iter() {
@@ -491,10 +491,14 @@ impl Lobby {
                 ready_player_count += 1;
             }
         }
-        let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-        self.lobby_wide_send(players_tx, format!("{} is ready!", username))
-            .await;
         return (ready_player_count, self.current_player_count);
+    }
+
+    pub async fn reset_ready(&self) {
+        let mut players = self.players.lock().await;
+        for player in players.iter_mut() {
+            player.ready = false;
+        }
     }
 
     async fn change_player_state(&self, state: i32) {

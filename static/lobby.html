@@ -442,8 +442,8 @@
       
         // Set up periodic refresh
         setInterval(() => {
-          refreshLobby();
-        }, 5000);
+          updateInput();
+        }, 100);
       };
 
       // Add this function to load the appropriate game iframe
@@ -571,6 +571,7 @@
       
       // Modified startGame function
       function startGame() {
+        sendToServer(JSON.stringify({ action: "StartGame" }));
         if (gameActive) return; // Prevent multiple starts
         
         gameActive = true;
@@ -669,6 +670,10 @@
 
       function refreshLobbyInfo() {
         sendToServer(JSON.stringify({ action: "ShowLobbyInfo" }));
+      }
+
+      function updateInput(){
+        sendToServer(JSON.stringify({ action: "UpdateInput" }));
       }
 
       function showRules() {
