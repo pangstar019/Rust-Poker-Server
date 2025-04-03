@@ -116,11 +116,17 @@ async fn main() -> std::io::Result<()> {
     let lobby_route = warp::path("lobby")
         .map(|| warp::reply::html(include_str!("../static/lobby.html")));
 
-    // let in_game_route = warp::path("in_game")
-    //     .map(|| warp::reply::html(include_str!("../static/in_game.html")));
-
     let stats_route = warp::path("stats")
         .map(|| warp::reply::html(include_str!("../static/stats.html")));
+
+    let five_card = warp::path("five_card")
+        .and(warp::fs::dir("../static/five_card.html"));
+
+    let seven_card = warp::path("sevn_card")
+        .and(warp::fs::dir("../static/seven_card.html"));
+
+    let texas_hold_em = warp::path("texas_holdem")
+        .and(warp::fs::dir("../static/texas_holdem.html"));
 
     let static_files = warp::path("static")
         .and(warp::fs::dir("../static"));
@@ -131,8 +137,10 @@ async fn main() -> std::io::Result<()> {
         .or(login_route)
         .or(server_lobby_route)
         .or(lobby_route)
-        // .or(in_game_route)
         .or(stats_route)
+        .or(five_card)
+        .or(seven_card)
+        .or(texas_hold_em)
         .or(static_files)
         .with(warp::cors()
             .allow_any_origin()
@@ -355,6 +363,7 @@ async fn handle_server_lobby(mut player: Player, server_lobby: Arc<Mutex<Lobby>>
                 None => continue,
             }
         };
+        println!("reached here");
         
         println!("Received message: {:?}", result);
         if let Ok(msg) = result {
@@ -408,6 +417,7 @@ async fn handle_server_lobby(mut player: Player, server_lobby: Arc<Mutex<Lobby>>
                             if result == "Disconnect" {
                                 break;
                             }
+                            server_lobby.lock().await.broadcast_lobbies(Some(tx.clone())).await; // update server page lobby display for this player only
                         } else {
                             // Failed to join lobby
                             let message = if spectate {
@@ -465,8 +475,8 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
     println!("{} has joined lobby: {}", player.name, player_lobby.lock().await.name);
     
     // Send initial lobby information
-    send_lobby_info(&player_lobby, &tx).await;
-    send_player_list(&player_lobby, &tx).await;
+    send_lobby_info(&player_lobby).await;
+    send_player_list(&player_lobby).await;
     
     loop {
         let result = {
@@ -486,154 +496,132 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                 let lobby_state = player_lobby.lock().await.game_state.clone();
                 let lobby_name = player_lobby.lock().await.name.clone();
                 println!("Lobby {} state: {}", lobby_name, lobby_state);
-                
-                if lobby_state == lobby::JOINABLE || lobby_state == lobby::GAME_LOBBY_FULL {
-                    match client_msg {
-                        Ok(ClientMessage::Disconnect) => {
-                            server_lobby.lock().await.remove_player(player.name.clone()).await;
-                            server_lobby.lock().await.broadcast_player_count().await;
-                            return "disconnect".to_string();
+
+                match client_msg {
+                    Ok(ClientMessage::Quit) => {
+                        // QUIT LOBBY - Return to server lobby
+                        let lobby_status = player_lobby.lock().await.remove_player(player.name.clone()).await;
+                        if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                            server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
+                        } else {
+                            server_lobby.lock().await.update_lobby_names_status(lobby_name.clone()).await;
                         }
-                        Ok(ClientMessage::Quit) => {
-                            // QUIT LOBBY - Return to server lobby
-                            let lobby_status = player_lobby.lock().await.remove_player(player.name.clone()).await;
-                            if lobby_status == lobby::GAME_LOBBY_EMPTY {
-                                server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
-                            }
-                            server_lobby.lock().await.broadcast_player_count().await;
-                            
-                            // Send redirect back to server lobby
-                            tx.send(Message::text(r#"{"message": "Leaving lobby...", "redirect": "server_lobby"}"#)).unwrap();
-                            return "Normal".to_string();
+                        server_lobby.lock().await.broadcast_player_count().await;
+                        send_lobby_info(&player_lobby).await;
+                        send_player_list(&player_lobby).await;
+                        
+                        // Send redirect back to server lobby
+                        tx.send(Message::text(r#"{"message": "Leaving lobby...", "redirect": "server_lobby"}"#)).unwrap();
+                        return "Normal".to_string();
+                    }
+                    Ok(ClientMessage::Disconnect) => {
+                        // Player disconnected entirely
+                        let lobby_status = player_lobby.lock().await.remove_player(player.name.clone()).await;
+                        if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                            server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
+                        } else {
+                            server_lobby.lock().await.update_lobby_names_status(lobby_name.clone()).await;
                         }
-                        Ok(ClientMessage::Disconnect) => {
-                            // Player disconnected entirely
-                            let lobby_status = player_lobby.lock().await.remove_player(player.name.clone()).await;
-                            if lobby_status == lobby::GAME_LOBBY_EMPTY {
-                                server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
-                            }
-                            server_lobby.lock().await.remove_player(player.name.clone()).await;
-                            server_lobby.lock().await.broadcast_player_count().await;
-                            
-                            // Update player stats
-                            if let Err(e) = db.update_player_stats(&player).await {
-                                eprintln!("Failed to update player stats: {}", e);
-                            }
-                            
-                            return "Disconnect".to_string();
+                        server_lobby.lock().await.broadcast_player_count().await;
+                        send_lobby_info(&player_lobby).await;
+                        send_player_list(&player_lobby).await;
+
+                        server_lobby.lock().await.remove_player(player.name.clone()).await;
+                        server_lobby.lock().await.broadcast_player_count().await;
+                        
+                        // Update player stats
+                        if let Err(e) = db.update_player_stats(&player).await {
+                            eprintln!("Failed to update player stats: {}", e);
                         }
-                        Ok(ClientMessage::ShowLobbyInfo) => {
-                            // Send lobby information to client
-                            send_lobby_info(&player_lobby, &tx).await;
-                            // Update player list
-                            send_player_list(&player_lobby, &tx).await;
+                        
+                        return "Disconnect".to_string();
+                    }
+                    Ok(ClientMessage::ShowLobbyInfo) => {
+                        // Send lobby information to client
+                        send_lobby_info(&player_lobby).await;
+                        // Update player list
+                        send_player_list(&player_lobby).await;
+                    }
+                    Ok(ClientMessage::Ready) => {
+                        // READY UP
+                        let mut all_ready = 0;
+                        player.ready = !player.ready; // Toggle ready status
+                        
+                        let (ready_player_count, lobby_player_count) = 
+                            player_lobby.lock().await.ready_up(player.name.clone()).await;
+                        
+                        // Update all clients with the new player list
+                        // Create player list message and broadcast it to all players
+                        let player_info = player_lobby.lock().await.get_player_names_and_status().await;
+                        let mut players = Vec::new();
+                        for (name, ready) in player_info {
+                            players.push(serde_json::json!({
+                                "name": name,
+                                "ready": ready
+                            }));
                         }
-                        Ok(ClientMessage::Ready) => {
-                            // READY UP
-                            let mut all_ready = 0;
-                            player.ready = !player.ready; // Toggle ready status
+                        
+                        let player_list = serde_json::json!({
+                            "players": players
+                        });
+                        
+                        player_lobby.lock().await.broadcast_json(player_list.to_string()).await;
+                        
+                        if ready_player_count == lobby_player_count && lobby_player_count >= 2 {
+                            all_ready = 1;
                             
-                            let (ready_player_count, lobby_player_count) = 
-                                player_lobby.lock().await.ready_up(player.name.clone()).await;
-                            
-                            // Update all clients with the new player list
-                            // Create player list message and broadcast it to all players
-                            let player_info = player_lobby.lock().await.get_player_names_and_status().await;
-                            let mut players = Vec::new();
-                            for (name, ready) in player_info {
-                                players.push(serde_json::json!({
-                                    "name": name,
-                                    "ready": ready
-                                }));
-                            }
-                            
-                            let player_list = serde_json::json!({
-                                "players": players
+                            // Send notification that all players are ready
+                            let msg = serde_json::json!({
+                                "message": "All players ready. Starting game..."
                             });
+                            player_lobby.lock().await.broadcast_json(msg.to_string()).await;
                             
-                            player_lobby.lock().await.broadcast_json(player_list.to_string()).await;
+                            sleep(Duration::from_secs(2)).await;
                             
-                            if ready_player_count == lobby_player_count && lobby_player_count >= 2 {
-                                all_ready = 1;
-                                
-                                // Send notification that all players are ready
-                                let msg = serde_json::json!({
-                                    "message": "All players ready. Starting game..."
-                                });
-                                player_lobby.lock().await.broadcast_json(msg.to_string()).await;
-                                
-                                sleep(Duration::from_secs(2)).await;
-                                
-                                // Start the game
-                                let player_lobby_clone = player_lobby.clone();
-                                player_lobby.lock().await.game_state = lobby::START_OF_ROUND;
-                                tokio::spawn(async move {
-                                    let mut player_lobby_host = player_lobby_clone.lock().await;
-                                    player_lobby_host.start_game().await;
-                                });
-                                
-                                // Redirect all players to the game page
-                                let redirect_msg = serde_json::json!({
-                                    "redirect": "in_game"
-                                });
-                                player_lobby.lock().await.broadcast_json(redirect_msg.to_string()).await;
-                            } else if lobby_player_count < 2 {
-                                // Not enough players
-                                let msg = serde_json::json!({
-                                    "message": "Need at least 2 players to start the game"
-                                });
-                                tx.send(Message::text(msg.to_string())).unwrap();
-                            } else {
-                                // Not all players are ready
-                                let msg = serde_json::json!({
-                                    "message": format!("Players ready: {}/{}", ready_player_count, lobby_player_count)
-                                });
-                                tx.send(Message::text(msg.to_string())).unwrap();
-                            }
-                        }
-                        Ok(ClientMessage::ShowStats) => {
-                            // Get and send player stats
-                            let stats = db.player_stats(&player.name).await;
-                            if let Ok(stats) = stats {
-                                let stats_json = serde_json::json!({
-                                    "stats": {
-                                        "username": player.name,
-                                        "gamesPlayed": stats.games_played,
-                                        "gamesWon": stats.games_won,
-                                        "wallet": stats.wallet
-                                    }
-                                });
-                                tx.send(Message::text(stats_json.to_string())).unwrap();
-                            } else {
-                                tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
-                            }
-                        }
-                        _ => {
-                            // Unsupported action in lobby
-                            tx.send(Message::text(r#"{"message": "Unsupported action in lobby"}"#)).unwrap();
+                            // Start the game
+                            player_lobby.lock().await.game_state = lobby::START_OF_ROUND;
+
+
+                            /*  Start the game  */
+
+
+
+                            /*                  */
+
+                        } else if lobby_player_count < 2 {
+                            // Not enough players
+                            let msg = serde_json::json!({
+                                "message": "Need at least 2 players to start the game"
+                            });
+                            tx.send(Message::text(msg.to_string())).unwrap();
+                        } else {
+                            // Not all players are ready
+                            let msg = serde_json::json!({
+                                "message": format!("Players ready: {}/{}", ready_player_count, lobby_player_count)
+                            });
+                            tx.send(Message::text(msg.to_string())).unwrap();
                         }
                     }
-                } else {
-                    // Game is in progress
-                    println!("Lobby in progress.");
-                    tx.send(Message::text(r#"{"message": "Game is in progress, certain actions are restricted"}"#)).unwrap();
-                    let game_type = player_lobby.lock().await.game_type.clone();
-                    match game_type {
-                        lobby::FIVE_CARD_DRAW => {
-                            // each player goes into this and loops there until game over
-                            games::five_card_game_state_machine(&mut player).await;
+                    Ok(ClientMessage::ShowStats) => {
+                        // Get and send player stats
+                        let stats = db.player_stats(&player.name).await;
+                        if let Ok(stats) = stats {
+                            let stats_json = serde_json::json!({
+                                "stats": {
+                                    "username": player.name,
+                                    "gamesPlayed": stats.games_played,
+                                    "gamesWon": stats.games_won,
+                                    "wallet": stats.wallet
+                                }
+                            });
+                            tx.send(Message::text(stats_json.to_string())).unwrap();
+                        } else {
+                            tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
                         }
-                        lobby::SEVEN_CARD_STUD => {
-                            // Handle 7 Card Stud game logic here
-                            // games::seven_card_game_state_machine(&mut player).await;
-                        }
-                        lobby::TEXAS_HOLD_EM => {
-                            // Handle Texas Hold'em game logic here
-                            // games::texas_hold_em_game_state_machine(&mut player).await;
-                        }
-                        _ => {
-                            tx.send(Message::text(r#"{"message": "Unknown game type"}"#)).unwrap();
-                        }
+                    }
+                    _ => {
+                        // Unsupported action in lobby
+                        tx.send(Message::text(r#"{"message": "Unsupported action in lobby"}"#)).unwrap();
                     }
                 }
             }
@@ -642,7 +630,7 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
 }
 
 /// Sends the current lobby information to the client.
-async fn send_lobby_info(player_lobby: &Arc<Mutex<Lobby>>, tx: &mpsc::UnboundedSender<Message>) {
+async fn send_lobby_info(player_lobby: &Arc<Mutex<Lobby>>) {
     let lobby = player_lobby.lock().await;
     
     // Get lobby information
@@ -671,11 +659,16 @@ async fn send_lobby_info(player_lobby: &Arc<Mutex<Lobby>>, tx: &mpsc::UnboundedS
         }
     });
     
-    tx.send(Message::text(lobby_info.to_string())).unwrap();
+    let players = lobby.players.lock().await;
+    let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+    for tx in player_tx {
+        // Send lobby information to all players in the lobby
+        tx.send(Message::text(lobby_info.to_string())).unwrap();
+    }
 }
 
 /// Sends the current player list to the client.
-async fn send_player_list(player_lobby: &Arc<Mutex<Lobby>>, tx: &mpsc::UnboundedSender<Message>) {
+async fn send_player_list(player_lobby: &Arc<Mutex<Lobby>>) {
     let lobby = player_lobby.lock().await;
     
     // Build player list
@@ -692,7 +685,12 @@ async fn send_player_list(player_lobby: &Arc<Mutex<Lobby>>, tx: &mpsc::Unbounded
     let player_list = serde_json::json!({
         "players": players
     });
-    
-    tx.send(Message::text(player_list.to_string())).unwrap();
+
+    let players = lobby.players.lock().await;
+    let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+    for tx in player_tx {
+        // Send player list to all players in the lobby
+        tx.send(Message::text(player_list.to_string())).unwrap();
+    }
 }
 
