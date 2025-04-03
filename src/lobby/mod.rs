@@ -175,6 +175,7 @@ pub struct Lobby {
     pub first_betting_player: i32,
     pub game_type: i32,
     pub community_cards: Arc<Mutex<Vec<i32>>>,
+    pub current_player_turn: String,
 }
 
 impl Lobby {
@@ -209,6 +210,7 @@ impl Lobby {
             game_db: SqlitePool::connect("sqlite://poker.db").await.unwrap(),
             game_type: lobby_type,
             community_cards: Arc::new(Mutex::new(Vec::new())),
+            current_player_turn: "".to_string(),
         }
     }
 
@@ -507,11 +509,11 @@ impl Lobby {
         self.game_state = START_OF_ROUND;
         self.change_player_state(IN_GAME).await;
     
-        if self.game_type == FIVE_CARD_DRAW {
-            games::five_card_game_state_machine(self).await;
-        }
+        // if self.game_type == FIVE_CARD_DRAW {
+        //     games::five_card_game_state_machine(self).await;
+        // }
         // call different game state machine (not done yet)
-        else if self.game_type == SEVEN_CARD_STUD {
+        if self.game_type == SEVEN_CARD_STUD {
             games::seven_card_game_state_machine(self).await;
         } else {
             games::texas_holdem_game_state_machine(self).await;

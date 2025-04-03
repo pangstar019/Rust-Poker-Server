@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>7 Card Stud Poker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    
+    .game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    
+    .game-table {
+      width: 800px;
+      height: 500px;
+      background-color: #277234;
+      border-radius: 200px;
+      border: 15px solid #8B4513;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    
+    .game-info {
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      margin-bottom: 10px;
+      width: 90%;
+      text-align: center;
+    }
+    
+    .opponents-area {
+      display: flex;
+      justify-content: space-around;
+      width: 100%;
+      margin-top: 20px;
+    }
+    
+    .opponent {
+      background-color: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      text-align: center;
+      width: 120px;
+    }
+    
+    .pot-area {
+      background-color: rgba(255, 215, 0, 0.2);
+      border-radius: 50%;
+      width: 150px;
+      height: 150px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 20px 0;
+    }
+    
+    .pot-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
+      text-shadow: 1px 1px 2px black;
+    }
+    
+    .player-hand {
+      background-color: rgba(0, 0, 0, 0.5);
+      padding: 15px;
+      border-radius: 10px;
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    
+    .card {
+      width: 70px;
+      height: 100px;
+      background-color: white;
+      border-radius: 5px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 18px;
+      position: relative;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    
+    .card.facedown {
+      background-color: #1a3c8b;
+      background-image: repeating-linear-gradient(45deg, #1a3c8b, #1a3c8b 10px, #2a4c9b 10px, #2a4c9b 20px);
+    }
+    
+    .heart, .diamond {
+      color: red;
+    }
+    
+    .spade, .club {
+      color: black;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-top: 20px;
+    }
+    
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    button:hover {
+      opacity: 0.9;
+    }
+    
+    .fold-btn {
+      background-color: #e74c3c;
+      color: white;
+    }
+    
+    .check-btn {
+      background-color: #3498db;
+      color: white;
+    }
+    
+    .call-btn {
+      background-color: #2ecc71;
+      color: white;
+    }
+    
+    .raise-btn {
+      background-color: #f39c12;
+      color: white;
+    }
+    
+    .message-area {
+      width: 100%;
+      height: 150px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 10px;
+      background-color: white;
+      border-radius: 5px;
+      margin-top: 20px;
+    }
+    
+    .message {
+      margin: 5px 0;
+      padding: 5px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .action-message {
+      color: #3498db;
+    }
+    
+    .system-message {
+      color: #7f8c8d;
+      font-style: italic;
+    }
+    
+    .error-message {
+      color: #e74c3c;
+    }
+    
+    .betting-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    
+    .bet-amount {
+      width: 80px;
+      padding: 8px;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+    }
+    
+    .bet-slider {
+      width: 200px;
+    }
+    
+    .player-info {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      padding: 10px;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      border-radius: 5px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <h1>7 Card Stud Poker</h1>
+    
+    <div class="player-info">
+      <div>Player: <span id="playerName">Player1</span></div>
+      <div>Wallet: $<span id="playerWallet">1000</span></div>
+      <div>Current Bet: $<span id="currentBet">0</span></div>
+    </div>
+    
+    <div class="game-table">
+      <div class="game-info">
+        <div id="gameStatus">Waiting for players...</div>
+      </div>
+      
+      <div class="opponents-area" id="opponentsArea">
+        <!-- Opponents will be dynamically added here -->
+      </div>
+      
+      <div class="pot-area">
+        <div class="pot-value">Pot: $<span id="potValue">0</span></div>
+      </div>
+      
+      <div class="player-hand" id="playerHand">
+        <!-- Player's cards will be dynamically added here -->
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button class="fold-btn" onclick="playerAction('fold')">Fold</button>
+      <button class="check-btn" onclick="playerAction('check')">Check</button>
+      <button class="call-btn" onclick="playerAction('call')">Call</button>
+      <div class="betting-controls">
+        <input type="number" class="bet-amount" id="betAmount" min="1" value="10">
+        <input type="range" class="bet-slider" id="betSlider" min="1" max="100" value="10" oninput="updateBetAmount()">
+        <button class="raise-btn" onclick="playerAction('raise')">Raise</button>
+      </div>
+    </div>
+    
+    <div class="message-area" id="messageArea">
+      <div class="message system-message">Welcome to 7 Card Stud Poker!</div>
+      <div class="message system-message">Game will begin soon...</div>
+    </div>
+  </div>
+
+  <script>
+    // Game state variables
+    let gameState = {
+      pot: 0,
+      playerCards: [],
+      opponentsInfo: [],
+      playerWallet: 1000,
+      currentBet: 0,
+      isPlayerTurn: false
+    };
+    
+    // DOM elements
+    const playerHandElement = document.getElementById('playerHand');
+    const opponentsAreaElement = document.getElementById('opponentsArea');
+    const potValueElement = document.getElementById('potValue');
+    const playerWalletElement = document.getElementById('playerWallet');
+    const currentBetElement = document.getElementById('currentBet');
+    const gameStatusElement = document.getElementById('gameStatus');
+    const messageAreaElement = document.getElementById('messageArea');
+    const betAmountElement = document.getElementById('betAmount');
+    const betSliderElement = document.getElementById('betSlider');
+    
+    // Listen for messages from parent frame
+    window.addEventListener('message', event => {
+      if (event.data.type === 'websocket') {
+        handleMessage(event.data.data);
+      }
+    });
+    
+    // Send messages through parent using postMessage
+    function sendToServer(message) {
+      window.parent.postMessage({
+        type: 'sendWebSocket',
+        data: message
+      }, '*');
+    }
+    
+    // Handle player actions (fold, check, call, raise)
+    function playerAction(action) {
+      if (!gameState.isPlayerTurn) {
+        addMessage('It\'s not your turn yet', 'error-message');
+        return;
+      }
+      
+      let message;
+      switch (action) {
+        case 'fold':
+          message = '1'; // Using numbers as in the betting_round function in games/mod.rs
+          break;
+        case 'check':
+          message = '2';
+          break;
+        case 'call':
+          message = '3';
+          break;
+        case 'raise':
+          message = '4';
+          const betAmount = document.getElementById('betAmount').value;
+          message += ' ' + betAmount;
+          break;
+        default:
+          return;
+      }
+      
+      // Send the action to the server
+      sendToServer(message);
+      addMessage(`You ${action}${action === 'raise' ? ' $' + betAmount : ''}`, 'action-message');
+      gameState.isPlayerTurn = false;
+    }
+    
+    // Update bet amount when slider is moved
+    function updateBetAmount() {
+      const sliderValue = betSliderElement.value;
+      betAmountElement.value = sliderValue;
+    }
+    
+    // Handle incoming messages from the server
+    function handleMessage(data) {
+      try {
+        // Try to parse as JSON first
+        const jsonData = JSON.parse(data);
+        processJsonMessage(jsonData);
+      } catch (e) {
+        // If not JSON, handle as text message
+        processTextMessage(data);
+      }
+    }
+    
+    // Process JSON messages
+    function processJsonMessage(jsonData) {
+      if (jsonData.redirect) {
+        // Handle redirect if needed
+        window.parent.navigate(jsonData.redirect);
+        return;
+      }
+      
+      if (jsonData.gameState) {
+        updateGameState(jsonData.gameState);
+      }
+      
+      if (jsonData.message) {
+        addMessage(jsonData.message, 'system-message');
+      }
+      
+      if (jsonData.error) {
+        addMessage(jsonData.error, 'error-message');
+      }
+    }
+    
+    // Process text messages (non-JSON)
+    function processTextMessage(text) {
+      // Check if it's a specific command
+      if (text.startsWith('Your turn')) {
+        gameState.isPlayerTurn = true;
+        gameStatusElement.innerText = 'Your turn!';
+        addMessage(text, 'system-message');
+      } else if (text.startsWith('Your hand:')) {
+        // Parse and update the player's hand
+        const cardLines = text.split('\n').slice(1);
+        const cards = cardLines.map(line => {
+          const parts = line.split('. ');
+          if (parts.length === 2) {
+            return parts[1];
+          }
+          return null;
+        }).filter(Boolean);
+        
+        updatePlayerHand(cards);
+        addMessage('New cards dealt to you', 'system-message');
+      } else {
+        // General game messages
+        addMessage(text, 'system-message');
+      }
+    }
+    
+    // Update the game state based on server data
+    function updateGameState(state) {
+      gameState = {...gameState, ...state};
+      
+      // Update UI elements
+      potValueElement.innerText = gameState.pot;
+      playerWalletElement.innerText = gameState.playerWallet;
+      currentBetElement.innerText = gameState.currentBet;
+      
+      if (gameState.gameStatus) {
+        gameStatusElement.innerText = gameState.gameStatus;
+      }
+      
+      // Update max bet allowed based on player wallet
+      betSliderElement.max = gameState.playerWallet;
+    }
+    
+    // Update the player's hand display
+    function updatePlayerHand(cards) {
+      playerHandElement.innerHTML = '';
+      
+      cards.forEach(card => {
+        const cardElement = document.createElement('div');
+        cardElement.className = 'card';
+        
+        if (card === 'X') {
+          // Face-down card
+          cardElement.classList.add('facedown');
+          cardElement.innerText = '';
+        } else {
+          // Face-up card
+          let suit = '';
+          let color = '';
+          
+          if (card.includes('Hearts')) {
+            suit = '♥';
+            color = 'heart';
+          } else if (card.includes('Diamond')) {
+            suit = '♦';
+            color = 'diamond';
+          } else if (card.includes('Spade')) {
+            suit = '♠';
+            color = 'spade';
+          } else if (card.includes('Club')) {
+            suit = '♣';
+            color = 'club';
+          }
+          
+          const rank = card.split(' ')[0];
+          cardElement.classList.add(color);
+          cardElement.innerHTML = `${rank}<br>${suit}`;
+        }
+        
+        playerHandElement.appendChild(cardElement);
+      });
+    }
+    
+    // Add a message to the message area
+    function addMessage(message, type = 'message') {
+      const messageElement = document.createElement('div');
+      messageElement.className = `message ${type}`;
+      messageElement.innerText = message;
+      
+      messageAreaElement.appendChild(messageElement);
+      messageAreaElement.scrollTop = messageAreaElement.scrollHeight;
+    }
+    
+    // Initialize the game when the page loads
+    window.onload = function() {
+      sendToServer("game:join");
+      addMessage("Connected to game server.", "system-message");
+      
+      // For demonstration, populate with placeholder data
+      updatePlayerHand(['X', 'X', '10 Hearts', '7 Spade', 'Jack Club']);
+      
+      // Example opponents
+      const opponents = [
+        { name: "Player2", state: "Active", bet: 20 },
+        { name: "Player3", state: "Folded", bet: 0 },
+        { name: "Player4", state: "Active", bet: 30 }
+      ];
+      
+      // Render opponents
+      opponentsAreaElement.innerHTML = '';
+      opponents.forEach(opp => {
+        const oppElement = document.createElement('div');
+        oppElement.className = 'opponent';
+        oppElement.innerHTML = `
+          <div>${opp.name}</div>
+          <div>${opp.state}</div>
+          <div>Bet: $${opp.bet}</div>
+        `;
+        opponentsAreaElement.appendChild(oppElement);
+      });
+    };
+  </script>
+</body>
+</html>

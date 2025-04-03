@@ -1200,61 +1200,94 @@ pub async fn find_next_start(lobby: &mut Lobby, dealer_index: i32) {
 /// 
 /// This function does not return a value. It updates the game state and player statistics.
 /// It also handles the display of game information to all players.
-pub async fn five_card_game_state_machine(lobby: &mut Lobby) {
+pub async fn five_card_game_state_machine(player: &mut Player) -> String {
+    
+    // let mut lobby_guard = player.lobby.clone();
     loop {
-        match lobby.game_state {
-            START_OF_ROUND => {
-                lobby.first_betting_player =(lobby.first_betting_player + 1) % lobby.current_player_count;
-                lobby.game_state = ANTE;
-            }
-            ANTE => {
-                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
-                ante(lobby).await;
-                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
-                lobby.game_state = DEAL_CARDS;
-            }
-            DEAL_CARDS => {
-                lobby.broadcast("Dealing cards...".to_string()).await;
-                lobby.deck.shuffle(); // shuffle card deck
-                deal_cards(lobby).await; // deal and display each players hands to them
-                lobby.game_state = FIRST_BETTING_ROUND;
-            }
-            FIRST_BETTING_ROUND => {
-                lobby.broadcast("------First betting round!------".to_string()).await;
-                betting_round(lobby).await;
-                if lobby.game_state == SHOWDOWN {
-                    continue;
-                } else {
-                    lobby.game_state = DRAW;
-                    lobby.broadcast(format!("First betting round complete!\nCurrent pot: {}",lobby.pot)).await;
+        println!("HERE HERE!");
+        if let Ok(mut lobby_guard) = player.lobby.try_lock() {
+            if lobby_guard.current_player_turn == player.name {
+                match lobby_guard.game_state {
+                    START_OF_ROUND => {
+                        lobby_guard.first_betting_player = (lobby_guard.first_betting_player + 1) % lobby_guard.current_player_count;
+                        lobby_guard.game_state = ANTE;
+                    }
+                    ANTE => {
+                        lobby_guard.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
+                        ante(&mut *lobby_guard).await;
+                        lobby_guard.broadcast(format!("Current pot: {}", lobby_guard.pot)).await;
+                        lobby_guard.game_state = DEAL_CARDS;
+                    }
+                    DEAL_CARDS => {
+                        lobby_guard.broadcast("Dealing cards...".to_string()).await;
+                        lobby_guard.deck.shuffle(); // shuffle card deck
+                        deal_cards(&mut *lobby_guard).await; // deal and display each players hands to them
+                        lobby_guard.game_state = FIRST_BETTING_ROUND;
+                    }
+                    FIRST_BETTING_ROUND => {
+                        lobby_guard.broadcast("------First betting round!------".to_string()).await;
+                        betting_round(&mut *lobby_guard).await;
+                        if lobby_guard.game_state == SHOWDOWN {
+                            continue;
+                        } else {
+                            lobby_guard.game_state = DRAW;
+                            lobby_guard.broadcast(format!("First betting round complete!\nCurrent pot: {}", lobby_guard.pot)).await;
+                        }
+                    }
+                    DRAW => {
+                        lobby_guard.broadcast("------Drawing round!------".to_string()).await;
+                        drawing_round(&mut *lobby_guard).await;
+                        lobby_guard.game_state = SECOND_BETTING_ROUND;
+                    }
+                    SECOND_BETTING_ROUND => {
+                        lobby_guard.broadcast("Second betting round!".to_string()).await;
+                        betting_round(&mut *lobby_guard).await;
+                        lobby_guard.broadcast(format!("Second betting round complete!\nCurrent pot: {}", lobby_guard.pot)).await;
+                        lobby_guard.game_state = SHOWDOWN;
+                    }
+                    SHOWDOWN => {
+                        lobby_guard.broadcast("------Showdown Round!------".to_string()).await;
+                        showdown(&mut *lobby_guard).await;
+                        lobby_guard.game_state = END_OF_ROUND;
+                    }
+                    END_OF_ROUND => {
+                        lobby_guard.game_state = UPDATE_DB;
+                    }
+                    UPDATE_DB => {
+                        lobby_guard.pot = 0;
+                        lobby_guard.update_db().await;
+                        return "".to_string();
+                    }
+                    _ => {
+                        panic!("Invalid game state: {}", lobby_guard.game_state);
+                    }
                 }
             }
-            DRAW => {
-                lobby.broadcast("------Drawing round!------".to_string()).await;
-                drawing_round(lobby).await;
-                lobby.game_state = SECOND_BETTING_ROUND;
-            }
-            SECOND_BETTING_ROUND => {
-                lobby.broadcast("Second betting round!".to_string()).await;
-                betting_round(lobby).await;
-                lobby.broadcast(format!("Second betting round complete!\nCurrent pot: {}",lobby.pot)).await;
-                lobby.game_state = SHOWDOWN;
-            }
-            SHOWDOWN => {
-                lobby.broadcast("------Showdown Round!------".to_string()).await;
-                showdown(lobby).await;
-                lobby.game_state = END_OF_ROUND;
-            }
-            END_OF_ROUND => {
-                lobby.game_state = UPDATE_DB;
-            }
-            UPDATE_DB => {
-                lobby.pot = 0;
-                lobby.update_db().await;
-                break;
-            }
-            _ => {
-                panic!("Invalid game state: {}", lobby.game_state);
+            else {drop(lobby_guard);}
+        } else {
+            let result = {
+                let mut rx = player.rx.lock().await;
+                match rx.next().await {
+                    Some(res) => res,
+                    None => continue,
+                }
+            };
+
+            if let Ok(msg) = result {
+                if let Ok(text) = msg.to_str() {
+                    // Attempt to parse the incoming JSON message.
+                    let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
+                    println!("Received message: {}", text);
+                    match client_msg {
+                        Ok(ClientMessage::Disconnect) => {
+                           // Handle disconnection properly
+                            player.state = FOLDED;
+                            drop(player.clone().rx);
+                            return "disconnected".to_string();
+                        }
+                        _ => {continue;}
+                    }
+                }
             }
         }
     }

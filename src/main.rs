@@ -116,8 +116,8 @@ async fn main() -> std::io::Result<()> {
     let lobby_route = warp::path("lobby")
         .map(|| warp::reply::html(include_str!("../static/lobby.html")));
 
-    let in_game_route = warp::path("in_game")
-        .map(|| warp::reply::html(include_str!("../static/in_game.html")));
+    // let in_game_route = warp::path("in_game")
+    //     .map(|| warp::reply::html(include_str!("../static/in_game.html")));
 
     let stats_route = warp::path("stats")
         .map(|| warp::reply::html(include_str!("../static/stats.html")));
@@ -131,7 +131,7 @@ async fn main() -> std::io::Result<()> {
         .or(login_route)
         .or(server_lobby_route)
         .or(lobby_route)
-        .or(in_game_route)
+        // .or(in_game_route)
         .or(stats_route)
         .or(static_files)
         .with(warp::cors()
@@ -617,6 +617,24 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                     // Game is in progress
                     println!("Lobby in progress.");
                     tx.send(Message::text(r#"{"message": "Game is in progress, certain actions are restricted"}"#)).unwrap();
+                    let game_type = player_lobby.lock().await.game_type.clone();
+                    match game_type {
+                        lobby::FIVE_CARD_DRAW => {
+                            // each player goes into this and loops there until game over
+                            games::five_card_game_state_machine(&mut player).await;
+                        }
+                        lobby::SEVEN_CARD_STUD => {
+                            // Handle 7 Card Stud game logic here
+                            // games::seven_card_game_state_machine(&mut player).await;
+                        }
+                        lobby::TEXAS_HOLD_EM => {
+                            // Handle Texas Hold'em game logic here
+                            // games::texas_hold_em_game_state_machine(&mut player).await;
+                        }
+                        _ => {
+                            tx.send(Message::text(r#"{"message": "Unknown game type"}"#)).unwrap();
+                        }
+                    }
                 }
             }
         }
