@@ -283,7 +283,7 @@ impl Lobby {
         println!("{:?}", lobbies);
         
         // After updating, broadcast the changes to all players
-        self.broadcast_lobbies().await;
+        self.broadcast_lobbies(None).await;
     }
 
     pub async fn broadcast_player_count(&self) {
@@ -307,7 +307,7 @@ impl Lobby {
             self.lobby_names_and_status.lock().await.push((lobby_name, lobby_status, lobby_type, curr_player_count, max_player_count));
         }
         // Broadcast the updated lobby list
-        self.broadcast_lobbies().await;
+        self.broadcast_lobbies(None).await;
     }
 
     // Update the remove_lobby function:
@@ -326,15 +326,11 @@ impl Lobby {
         }
         
         // Broadcast the updated lobby list
-        self.broadcast_lobbies().await;
+        self.broadcast_lobbies(None).await;
     }
 
     // Add a new function to broadcast the lobby list:
-    pub async fn broadcast_lobbies(&self) {
-        // Get all players in the server lobby
-        let players = self.players.lock().await;
-        let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-        
+    pub async fn broadcast_lobbies(&self, tx: Option<mpsc::UnboundedSender<Message>>) {
         // Get the lobby information
         let lobbies = self.get_lobby_names_and_status().await;
         let mut lobby_list = Vec::new();
@@ -367,9 +363,17 @@ impl Lobby {
         let json = serde_json::json!({
             "lobbies": lobby_list
         }).to_string();
-        
-        // Send the updated lobby list to all players
-        for tx in players_tx {
+        if tx.is_none() {
+            // Get all players in the server lobby
+            let players = self.players.lock().await;
+            let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+            // Send the updated lobby list to all players
+            for tx in players_tx {
+                let _ = tx.send(Message::text(json.clone()));
+            }
+        } else {
+            // Send the updated lobby list to the specific player
+            let tx = tx.unwrap();
             let _ = tx.send(Message::text(json.clone()));
         }
     }
