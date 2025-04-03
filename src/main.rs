@@ -116,11 +116,17 @@ async fn main() -> std::io::Result<()> {
     let lobby_route = warp::path("lobby")
         .map(|| warp::reply::html(include_str!("../static/lobby.html")));
 
-    let in_game_route = warp::path("in_game")
-        .map(|| warp::reply::html(include_str!("../static/in_game.html")));
-
     let stats_route = warp::path("stats")
         .map(|| warp::reply::html(include_str!("../static/stats.html")));
+
+    let five_card = warp::path("five_card")
+        .and(warp::fs::dir("../static/five_card.html"));
+
+    let seven_card = warp::path("sevn_card")
+        .and(warp::fs::dir("../static/seven_card.html"));
+
+    let texas_hold_em = warp::path("texas_holdem")
+        .and(warp::fs::dir("../static/texas_holdem.html"));
 
     let static_files = warp::path("static")
         .and(warp::fs::dir("../static"));
@@ -131,8 +137,10 @@ async fn main() -> std::io::Result<()> {
         .or(login_route)
         .or(server_lobby_route)
         .or(lobby_route)
-        .or(in_game_route)
         .or(stats_route)
+        .or(five_card)
+        .or(seven_card)
+        .or(texas_hold_em)
         .or(static_files)
         .with(warp::cors()
             .allow_any_origin()
@@ -355,6 +363,7 @@ async fn handle_server_lobby(mut player: Player, server_lobby: Arc<Mutex<Lobby>>
                 None => continue,
             }
         };
+        println!("reached here");
         
         println!("Received message: {:?}", result);
         if let Ok(msg) = result {
@@ -565,18 +574,15 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                                 sleep(Duration::from_secs(2)).await;
                                 
                                 // Start the game
-                                let player_lobby_clone = player_lobby.clone();
                                 player_lobby.lock().await.game_state = lobby::START_OF_ROUND;
-                                tokio::spawn(async move {
-                                    let mut player_lobby_host = player_lobby_clone.lock().await;
-                                    player_lobby_host.start_game().await;
-                                });
-                                
-                                // Redirect all players to the game page
-                                let redirect_msg = serde_json::json!({
-                                    "redirect": "in_game"
-                                });
-                                player_lobby.lock().await.broadcast_json(redirect_msg.to_string()).await;
+
+
+                                /*  Start the game  */
+
+
+
+                                /*                  */
+
                             } else if lobby_player_count < 2 {
                                 // Not enough players
                                 let msg = serde_json::json!({
@@ -653,7 +659,12 @@ async fn send_lobby_info(player_lobby: &Arc<Mutex<Lobby>>, tx: &mpsc::UnboundedS
         }
     });
     
-    tx.send(Message::text(lobby_info.to_string())).unwrap();
+    let players = lobby.players.lock().await;
+    let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+    for tx in player_tx {
+        // Send lobby information to all players in the lobby
+        tx.send(Message::text(lobby_info.to_string())).unwrap();
+    }
 }
 
 /// Sends the current player list to the client.
@@ -674,7 +685,12 @@ async fn send_player_list(player_lobby: &Arc<Mutex<Lobby>>, tx: &mpsc::Unbounded
     let player_list = serde_json::json!({
         "players": players
     });
-    
-    tx.send(Message::text(player_list.to_string())).unwrap();
+
+    let players = lobby.players.lock().await;
+    let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+    for tx in player_tx {
+        // Send player list to all players in the lobby
+        tx.send(Message::text(player_list.to_string())).unwrap();
+    }
 }
 
