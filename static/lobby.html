@@ -13,7 +13,7 @@
       }
 
       .container {
-        max-width: 900px;
+        max-width: 1200px;
         margin: 0 auto;
         padding: 20px;
       }
@@ -21,7 +21,7 @@
       h1 {
         text-align: center;
         color: #f8c471;
-        margin-bottom: 30px;
+        margin-bottom: 20px;
       }
 
       .lobby-info {
@@ -189,10 +189,121 @@
         border: none;
         background-color: white;
       }
+
+      /* Game iframe styling */
+      .game-container {
+        width: 100%;
+        height: 500px;
+        margin-top: 20px;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+      }
+
+      .game-iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        /* Remove the background color so it doesn't show green */
+        background-color: transparent;
+        position: relative;
+        z-index: 2;
+      }
+
+      /* Layout for when game is active */
+      .game-active .top-row {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .game-active .top-row .panel {
+        flex: 1;
+        margin-bottom: 0;
+      }
+
+      .row {
+        display: flex;
+        gap: 20px;
+      }
+
+      .col {
+        flex: 1;
+      }
+
+      /* Add to existing styles */
+      /* Game active state adjustments */
+      .game-active .container {
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .game-active .top-section {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 15px;
+      }
+      
+      .game-active .info-panel {
+        flex: 2;
+      }
+      
+      .game-active .stats-panel {
+        flex: 3;
+      }
+      
+      .game-active .game-container {
+        /* No need for display: block here since we want it always visible */
+        height: 500px;
+        margin-bottom: 15px;
+      }
+      
+      .game-active .player-panel {
+        margin-top: 10px;
+      }
+      
+      .game-active .lobby-controls {
+        display: none;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+      
+      .panel.minimized {
+        padding: 10px;
+      }
+      
+      .panel.minimized .panel-header {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+
+      .panel-toggle {
+        float: right;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .game-loading {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: #15803d;
+        color: white;
+        font-size: 20px;
+        z-index: 1;
+      }
     </style>
   </head>
   <body>
-    <div class="container">
+    <div class="container" id="mainContainer">
       <h1 id="lobbyTitle">Game Lobby</h1>
 
       <div class="lobby-info">
@@ -202,44 +313,62 @@
 
       <div class="response" id="response"></div>
 
-      <div class="action-panel">
+      <div class="action-panel lobby-controls" id="lobbyControls">
         <button onclick="readyUp()" class="ready-btn" id="readyButton">
           Ready Up
-        </button>
-        <button onclick="refreshStats()" class="stats-btn">
-          Refresh Stats
         </button>
         <button onclick="showRules()" class="rules-btn">Rules</button>
         <button onclick="quitLobby()" class="quit-btn">Leave Lobby</button>
       </div>
 
-      <div class="panel">
-        <div class="panel-header">Players in Lobby</div>
-        <ul class="player-list" id="playerList">
-          <li>Loading players...</li>
-        </ul>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">Your Statistics</div>
-        <div class="stats-container">
-          <div class="stats-item">
-            <div class="stats-value" id="gamesPlayed">0</div>
-            <div class="stats-label">Games Played</div>
-          </div>
-          <div class="stats-item">
-            <div class="stats-value" id="gamesWon">0</div>
-            <div class="stats-label">Games Won</div>
-          </div>
-          <div class="stats-item">
-            <div class="stats-value" id="winRate">0%</div>
-            <div class="stats-label">Win Rate</div>
-          </div>
-          <div class="stats-item">
-            <div class="stats-value" id="wallet">$0</div>
-            <div class="stats-label">Wallet</div>
+      <div class="top-section" id="topSection">
+        <div class="col info-panel">
+          <div class="panel">
+            <div class="panel-header">Players in Lobby <span class="panel-toggle" id="playerListToggle">[-]</span></div>
+            <div id="playerListContent">
+              <ul class="player-list" id="playerList">
+                <li>Loading players...</li>
+              </ul>
+            </div>
           </div>
         </div>
+        <div class="col stats-panel">
+          <div class="panel" id="statsPanel">
+            <div class="panel-header">Your Statistics <span class="panel-toggle" id="statsToggle">[-]</span></div>
+            <div id="statsContent">
+              <div class="stats-container">
+                <div class="stats-item">
+                  <div class="stats-value" id="gamesPlayed">0</div>
+                  <div class="stats-label">Games Played</div>
+                </div>
+                <div class="stats-item">
+                  <div class="stats-value" id="gamesWon">0</div>
+                  <div class="stats-label">Games Won</div>
+                </div>
+                <div class="stats-item">
+                  <div class="stats-value" id="winRate">0%</div>
+                  <div class="stats-label">Win Rate</div>
+                </div>
+                <div class="stats-item">
+                  <div class="stats-value" id="wallet">$0</div>
+                  <div class="stats-label">Wallet</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game iframe container -->
+      <div class="game-container" id="gameContainer">
+        <div id="gameLoading" class="game-loading">Loading poker table...</div>
+        <iframe id="gameFrame" class="game-iframe" src="about:blank"></iframe>
+      </div>
+
+      <!-- Game controls appear when game is active -->
+      <div class="action-panel game-controls hidden" id="gameControls">
+        <button onclick="showRules()" class="rules-btn">Rules</button>
+        <button onclick="quitLobby()" class="quit-btn">Leave Game</button>
       </div>
     </div>
 
@@ -261,9 +390,22 @@
       const readyButton = document.getElementById("readyButton");
       const rulesModal = document.getElementById("rulesModal");
       const rulesFrame = document.getElementById("rulesFrame");
+      const mainContainer = document.getElementById("mainContainer");
+      const gameContainer = document.getElementById("gameContainer");
+      const gameFrame = document.getElementById("gameFrame");
+      const lobbyControls = document.getElementById("lobbyControls");
 
       let isReady = false;
       let currentLobbyInfo = null;
+      let gameActive = false;
+
+      // Add these constants for the new UI elements
+      const topSection = document.getElementById("topSection");
+      const playerListToggle = document.getElementById("playerListToggle");
+      const statsToggle = document.getElementById("statsToggle");
+      const playerListContent = document.getElementById("playerListContent");
+      const statsContent = document.getElementById("statsContent");
+      const gameControls = document.getElementById("gameControls");
 
       // Update the game rule URLs to use Wikipedia
       const gameRuleUrls = {
@@ -271,15 +413,28 @@
         "7 Card Stud": "https://en.wikipedia.org/wiki/Seven-card_stud",
         "Texas Hold'em": "https://en.wikipedia.org/wiki/Texas_hold_%27em"
       };
+      
+      // Map game types to their corresponding HTML files
+      const gameHtmlFiles = {
+        "5 Card Draw": "five_card.html",
+        "7 Card Stud": "seven_card.html",
+        "Texas Hold'em": "texas_holdem.html" 
+      };
 
+      // Update the window.onload function
       window.onload = function () {
-        // Check if we have a stored game type from the server lobby
+        // Check if we have a stored game type
         const storedGameType = localStorage.getItem('currentGameType');
         if (storedGameType) {
           console.log("Found stored game type:", storedGameType);
-          // Initialize currentLobbyInfo with the stored game type
           currentLobbyInfo = currentLobbyInfo || {};
           currentLobbyInfo.gameType = storedGameType;
+          
+          // Initialize the game iframe with the appropriate game
+          loadGameFrame(storedGameType);
+        } else {
+          // Default to 5 Card Draw if no stored game type
+          loadGameFrame("5 Card Draw");
         }
         
         refreshLobbyInfo();
@@ -288,8 +443,48 @@
         // Set up periodic refresh
         setInterval(() => {
           refreshLobby();
-        }, 5000); // Refresh every 5 seconds
+        }, 5000);
       };
+
+      // Add this function to load the appropriate game iframe
+      function loadGameFrame(gameType) {
+        const gameFrame = document.getElementById("gameFrame");
+        let gameUrl = "five_card.html"; // Default
+        
+        // Show loading indicator
+        document.getElementById("gameLoading").style.display = "flex";
+        
+        // Clear any existing content first
+        gameFrame.src = "about:blank";
+        
+        // Give a small delay before loading new content
+        setTimeout(() => {
+          if (gameType.toLowerCase().includes("texas") || gameType.toLowerCase().includes("hold")) {
+            gameUrl = "texas_holdem.html";
+          } else if (gameType.toLowerCase().includes("7") || gameType.toLowerCase().includes("stud")) {
+            gameUrl = "seven_card.html";
+          } else if (gameType.toLowerCase().includes("5") || gameType.toLowerCase().includes("draw")) {
+            gameUrl = "five_card.html";
+          }
+          
+          console.log(`Loading game frame: ${gameUrl} for type: ${gameType}`);
+          // Load the file from /static/ directory instead of the root path
+          gameFrame.src = `/static/${gameUrl}`;
+          
+          // Add event listener to detect load errors
+          gameFrame.onerror = function() {
+            console.error(`Failed to load game frame: ${gameUrl}`);
+            document.getElementById("gameLoading").textContent = 
+              `Error loading game. Please refresh the page.`;
+          };
+          
+          // Add onload handler to hide loading message
+          gameFrame.onload = function() {
+            document.getElementById("gameLoading").style.display = "none";
+            console.log(`Successfully loaded game frame: ${gameUrl}`);
+          };
+        }, 100);
+      }
 
       // Handle WebSocket messages from parent frame
       window.addEventListener("message", (event) => {
@@ -317,6 +512,9 @@
           // Handle player list
           if (response.players) {
             updatePlayerList(response.players);
+            
+            // Check if all players are ready
+            checkAllPlayersReady(response.players);
           }
 
           // Handle lobby info
@@ -327,6 +525,11 @@
           // Handle stats
           if (response.stats) {
             updateStats(response.stats);
+          }
+          
+          // Handle game start
+          if (response.gameStarted) {
+            startGame();
           }
         } catch (e) {
           console.error("Error parsing message:", e);
@@ -348,18 +551,82 @@
           }">(${player.ready ? "Ready" : "Not Ready"})</span>`;
           playerListElement.appendChild(li);
         });
+        
+        // Send player data to the game iframe
+        sendGameCommand("updatePlayers", { players: players });
+      }
+      
+      function checkAllPlayersReady(players) {
+        // Only check if game isn't already active
+        if (gameActive) return;
+        
+        if (players.length >= 2) {
+          const allReady = players.every(player => player.ready);
+          if (allReady) {
+            console.log("All players are ready, starting game...");
+            startGame();
+          }
+        }
+      }
+      
+      // Modified startGame function
+      function startGame() {
+        if (gameActive) return; // Prevent multiple starts
+        
+        gameActive = true;
+        
+        // Update UI elements
+        mainContainer.classList.add("game-active");
+        lobbyControls.classList.add("hidden");
+        gameControls.classList.remove("hidden");
+        
+        // Send a message to the game iframe to start the game
+        sendGameCommand("startGame", {
+          players: currentLobbyInfo.players,
+          gameType: currentLobbyInfo.gameType
+        });
+        
+        console.log(`Game started: ${currentLobbyInfo.gameType}`);
+      }
+
+      // Add this function to send messages to the game iframe
+      function sendGameCommand(command, data) {
+        const gameFrame = document.getElementById("gameFrame");
+        if (gameFrame && gameFrame.contentWindow) {
+          gameFrame.contentWindow.postMessage({
+            type: "command",
+            command: command,
+            data: data
+          }, "*");
+        }
       }
 
       function updateLobbyInfo(info) {
+        // Check if game type has changed
+        const gameTypeChanged = currentLobbyInfo?.gameType !== info.gameType;
+        
+        // Update current lobby info
         currentLobbyInfo = info;
         lobbyTitle.textContent = info.name;
         playerCountDiv.textContent = `Players: ${info.playerCount}/${info.maxPlayers}`;
         gameTypeDiv.textContent = `Game Type: ${info.gameType}`;
         
-        // Save game type to localStorage when we get it from the server
+        // Save game type to localStorage
         if (info.gameType) {
           localStorage.setItem('currentGameType', info.gameType);
           console.log("Saved game type to localStorage:", info.gameType);
+        }
+        
+        // If game type changed, reload the appropriate game frame
+        if (gameTypeChanged) {
+          loadGameFrame(info.gameType);
+        }
+        
+        // Send updated player list to the game frame
+        if (info.players) {
+          sendGameCommand("updatePlayers", {
+            players: info.players
+          });
         }
         
         // Add debugging output
@@ -394,6 +661,10 @@
         // Clear the stored game type when leaving the lobby
         localStorage.removeItem('currentGameType');
         sendToServer(JSON.stringify({ action: "Quit" }));
+      }
+      
+      function refreshLobby() {
+        sendToServer(JSON.stringify({ action: "ShowPlayers" }));
       }
 
       function refreshLobbyInfo() {
@@ -477,6 +748,35 @@
           console.log("Game Rule URL:", gameRuleUrls[currentLobbyInfo.gameType] || "Not found");
         }
       }
+
+      // Add toggle functionality for panels
+      playerListToggle.addEventListener("click", function() {
+        togglePanel(playerListContent, playerListToggle);
+      });
+
+      statsToggle.addEventListener("click", function() {
+        togglePanel(statsContent, statsToggle);
+      });
+
+      function togglePanel(contentElement, toggleElement) {
+        const isOpen = contentElement.style.display !== "none";
+        
+        if (isOpen) {
+          contentElement.style.display = "none";
+          toggleElement.textContent = "[+]";
+          toggleElement.parentElement.parentElement.classList.add("minimized");
+        } else {
+          contentElement.style.display = "block";
+          toggleElement.textContent = "[-]";
+          toggleElement.parentElement.parentElement.classList.remove("minimized");
+        }
+      }
+
+      // Add this to the lobby.html script
+      gameFrame.onload = function() {
+        // Hide loading message when iframe loads
+        document.getElementById("gameLoading").style.display = "none";
+      };
     </script>
   </body>
 </html>

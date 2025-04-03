@@ -1,9 +1,4 @@
 target/
 debug/
-
-
-poker.db
-
-
-
-Cargo.lock
+*.db
+*.lock
