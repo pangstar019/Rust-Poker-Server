@@ -567,7 +567,9 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                     }
                     Ok(ClientMessage::StartGame) => {
                         // Start the game
+                        println!("player: {}, received start game", player.name.clone());
                         let game_type = player_lobby.lock().await.game_type.clone();
+                        player_lobby.lock().await.setup_game().await;
                         let mut status = "".to_string();
                         match game_type {
                             lobby::FIVE_CARD_DRAW => {
@@ -589,7 +591,7 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc
                                 continue;
                             }
                         }
-                        
+
                         if status == "Disconnect" {
                             // Player disconnected during game
                             let lobby_status = player_lobby.lock().await.remove_player(player.name.clone()).await;

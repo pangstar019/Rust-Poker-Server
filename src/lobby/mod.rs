@@ -510,26 +510,9 @@ impl Lobby {
             player.hand.clear();
         }
     }
-    pub async fn start_game(&mut self) {
-        // change lobby state first so nobody can try to join anymore
-        println!("Game started!");
-    
+    pub async fn setup_game(&mut self) {
+        self.current_player_turn = self.players.lock().await[0].name.clone();
         self.game_state = START_OF_ROUND;
-        self.change_player_state(IN_GAME).await;
-    
-        // if self.game_type == FIVE_CARD_DRAW {
-        //     games::five_card_game_state_machine(self).await;
-        // }
-        // call different game state machine (not done yet)
-        if self.game_type == SEVEN_CARD_STUD {
-            games::seven_card_game_state_machine(self).await;
-        } else {
-            games::texas_holdem_game_state_machine(self).await;
-        }
-    
-        self.game_state = JOINABLE;
-        self.change_player_state(IN_LOBBY).await;
-        self.broadcast(format!("Welcome to lobby: {}\nChoose an option:\n1. Ready:           r\n2. Show Players:    p\n3. View stats:      s\n4. Quit:            q\n\n", self.name)).await;
     }
 
 

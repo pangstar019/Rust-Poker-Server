@@ -1201,13 +1201,14 @@ pub async fn find_next_start(lobby: &mut Lobby, dealer_index: i32) {
 /// This function does not return a value. It updates the game state and player statistics.
 /// It also handles the display of game information to all players.
 pub async fn five_card_game_state_machine(player: &mut Player) -> String {
-    
     // let mut lobby_guard = player.lobby.clone();
     loop {
-        println!("HERE HERE!");
         if let Ok(mut lobby_guard) = player.lobby.try_lock() {
+            // println!("current player turn: {}", lobby_guard.current_player_turn);
+            // println!("player name: {}", player.name);
             if lobby_guard.current_player_turn == player.name {
                 loop{
+                    println!("reached");
                     let result = {
                         let mut rx = player.rx.lock().await;
                         match rx.next().await {
@@ -1260,6 +1261,7 @@ pub async fn five_card_game_state_machine(player: &mut Player) -> String {
                                                 lobby_guard.game_state = DRAW;
                                                 lobby_guard.broadcast(format!("First betting round complete!\nCurrent pot: {}", lobby_guard.pot)).await;
                                             }
+                                            break;
                                         }
                                         DRAW => {
                                             lobby_guard.broadcast("------Drawing round!------".to_string()).await;
