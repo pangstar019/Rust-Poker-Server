@@ -137,24 +137,60 @@ impl Player {
         spectate: bool
     ) -> i32 {
         let lobbies = server_lobby.lock().await.lobbies.lock().await.clone();
+        
         for lobby in lobbies {
-            let lobby_guard = lobby.try_lock();
-            if let Ok(mut lobby_guard) = lobby_guard {
+            // First try with a non-blocking lock
+            if let Ok(mut lobby_guard) = lobby.try_lock() {
                 if lobby_guard.name == lobby_name {
-                    // If spectating, set player state to SPECTATOR
                     if spectate {
-                        self.state = SPECTATOR; // You'll need to define this constant
-                        // lobby_guard.add_spectator();
-
+                        // Join as spectator
+                        self.state = SPECTATOR;
+                        lobby_guard.add_spectator(self.clone()).await;
+                        self.lobby = lobby.clone();
+                        return SUCCESS;
                     } else {
+                        // Check if game is in progress
+                        if lobby_guard.game_state >= START_OF_ROUND && 
+                           lobby_guard.game_state <= END_OF_ROUND {
+                            // Can't join as player during game
+                            return FAILED;
+                        }
+                        
+                        // Join as regular player
                         lobby_guard.add_player(self.clone()).await;
                         self.lobby = lobby.clone();
-
+                        return SUCCESS;
                     }
-                    return SUCCESS;
+                }
+            } else {
+                // If we couldn't get a lock, try again with a waiting lock
+                // but only for spectator join, as we don't want to block
+                if spectate {
+                    // First check if this is the right lobby
+                    let name_matches = {
+                        let guard = lobby.lock().await;
+                        guard.name == lobby_name
+                    }; // Guard is dropped here
+                    
+                    if name_matches {
+                        // Found the lobby but it's locked - add as spectator
+                        self.state = SPECTATOR;
+                        self.lobby = lobby.clone();
+                        
+                        // Spawn a task to add as spectator once lock is available
+                        let player_clone = self.clone();
+                        let lobby_clone = lobby.clone(); // Clone before moving
+                        tokio::spawn(async move {
+                            // Use the clone inside the async block
+                            lobby_clone.lock().await.add_spectator(player_clone).await;
+                        });
+                        
+                        return SUCCESS;
+                    }
                 }
             }
         }
+        
         FAILED
     }
 }
@@ -174,8 +210,11 @@ pub struct Lobby {
     pub game_state: i32,
     pub first_betting_player: i32,
     pub game_type: i32,
+    pub current_max_bet: i32,
     pub community_cards: Arc<Mutex<Vec<i32>>>,
     pub current_player_turn: String,
+    pub turns_remaining: i32,
+    pub spectators: Arc<Mutex<Vec<Player>>>,
 }
 
 impl Lobby {
@@ -209,8 +248,11 @@ impl Lobby {
             first_betting_player: 0,
             game_db: SqlitePool::connect("sqlite://poker.db").await.unwrap(),
             game_type: lobby_type,
+            current_max_bet: 0,
             community_cards: Arc::new(Mutex::new(Vec::new())),
             current_player_turn: "".to_string(),
+            turns_remaining: 0,
+            spectators: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -238,6 +280,15 @@ impl Lobby {
         }
     }
 
+    pub async fn add_spectator(&mut self, player: Player) {
+        let mut spectators = self.spectators.lock().await;
+        let name = player.name.clone();
+        spectators.push(player);
+
+        // Broadcast that a spectator joined
+        self.broadcast(format!("{} has joined as a spectator", name)).await;
+    }
+
     pub async fn remove_player(&mut self, username: String) -> i32 {
         let mut players = self.players.lock().await;
         players.retain(|p| p.name != username);
@@ -254,6 +305,14 @@ impl Lobby {
         };
         
         result
+    }
+
+    pub async fn remove_spectator(&mut self, username: String) -> bool {
+        let mut spectators = self.spectators.lock().await;
+        let initial_count = spectators.len();
+        spectators.retain(|p| p.name != username);
+
+        initial_count > spectators.len()
     }
 
     pub async fn update_lobby_names_status(&self, lobby_name: String) {
@@ -433,30 +492,20 @@ impl Lobby {
 
     pub async fn broadcast(&self, message: String) {
         println!("Broadcasting: {}", message);
-        let players = self.players.lock().await;
         
-        // Create JSON message that includes both regular message and player count
-        let json_message = format!(
-            r#"{{"message": "{}", "playerCount": {}}}"#,
-            message.replace("\"", "\\\""), // Escape quotes in message
-            self.current_player_count
-        );
-
-        let mut tasks = Vec::new();
-        for player in players.iter() {
-            let tx = player.tx.clone();
-            let msg = Message::text(json_message.clone());
-            tasks.push(tokio::spawn(async move {
-                if let Err(e) = tx.send(msg) {
-                    eprintln!("Failed to send message: {}", e);
-                }
-            }));
+        // Broadcast to players
+        {
+            let players = self.players.lock().await;
+            for player in players.iter() {
+                let _ = player.tx.send(Message::text(message.clone()));
+            }
         }
 
-        // Wait for all broadcast tasks to complete
-        for task in tasks {
-            if let Err(e) = task.await {
-                eprintln!("Task join error: {}", e);
+        // Broadcast to spectators
+        {
+            let spectators = self.spectators.lock().await;
+            for spectator in spectators.iter() {
+                let _ = spectator.tx.send(Message::text(message.clone()));
             }
         }
     }
@@ -510,11 +559,37 @@ impl Lobby {
             player.hand.clear();
         }
     }
-    pub async fn setup_game(&mut self) {
-        self.current_player_turn = self.players.lock().await[0].name.clone();
-        self.game_state = START_OF_ROUND;
-    }
 
+    pub async fn start_game(&mut self) {
+        println!("Game started!");
+        
+        // Change lobby state first so nobody can join anymore
+        self.game_state = START_OF_ROUND;
+        self.change_player_state(IN_GAME).await;
+        
+        // Run the appropriate game state machine based on game type
+        match self.game_type {
+            FIVE_CARD_DRAW => {
+                games::five_card_game_state_machine(self).await;
+            }
+            SEVEN_CARD_STUD => {
+                games::seven_card_game_state_machine(self).await;
+            }
+            TEXAS_HOLD_EM => {
+                games::texas_holdem_game_state_machine(self).await;
+            }
+            _ => {
+                // Unsupported game type
+                // self.broadcast("Unsupported game type").await;
+            }
+        }
+        
+        // After game ends, reset the lobby state
+        self.game_state = JOINABLE;
+        self.change_player_state(IN_LOBBY).await;
+        // self.broadcast("Game ended. Ready up to play again!").await;
+        self.reset_ready().await;
+    }
 
     pub async fn update_db(&self) {
         // update the database with the new player stats
@@ -538,6 +613,95 @@ impl Lobby {
             player.games_played = 0;
             player.games_won = 0;
         }
+    }
+
+    // New methods for player management
+    
+    /// Updates a player's state in this lobby
+    pub async fn update_player_state(&mut self, player_name: &str, new_state: i32) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.state = new_state;
+            return true;
+        }
+        false
+    }
+    
+    /// Sets whether a player is ready or not
+    pub async fn set_player_ready(&mut self, player_name: &str, ready: bool) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.ready = ready;
+            return true;
+        }
+        false
+    }
+    
+    /// Updates a player's hand
+    pub async fn update_player_hand(&mut self, player_name: &str, hand: Vec<i32>) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.hand = hand;
+            return true;
+        }
+        false
+    }
+    
+    /// Updates a player's wallet balance
+    pub async fn update_player_wallet(&mut self, player_name: &str, wallet: i32) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.wallet = wallet;
+            return true;
+        }
+        false
+    }
+    
+    /// Updates a player's current bet
+    pub async fn update_player_bet(&mut self, player_name: &str, bet: i32) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.current_bet = bet;
+            return true;
+        }
+        false
+    }
+    
+    /// Increments a player's games_played counter
+    pub async fn increment_games_played(&mut self, player_name: &str) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.games_played += 1;
+            return true;
+        }
+        false
+    }
+    
+    /// Increments a player's games_won counter
+    pub async fn increment_games_won(&mut self, player_name: &str) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.games_won += 1;
+            return true;
+        }
+        false
+    }
+    
+    /// Gets a player by their name
+    pub async fn get_player_by_name(&self, player_name: &str) -> Option<Player> {
+        let players = self.players.lock().await;
+        players.iter().find(|p| p.name == player_name).cloned()
+    }
+    
+    /// Process player input and return the result
+    pub async fn process_player_input(&self, player_name: &str) -> String {
+        let players = self.players.lock().await;
+        if let Some(player) = players.iter().find(|p| p.name == player_name) {
+            // Clone the player to process input
+            let mut player_clone = player.clone();
+            return player_clone.get_player_input().await;
+        }
+        "Error".to_string()
     }
 }
 
