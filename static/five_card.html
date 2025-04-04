@@ -82,12 +82,28 @@
         }
 
         /* Player positions around the table */
-        .player-spot:nth-child(1) { bottom: 10px; left: 50%; transform: translateX(-50%); }
-        .player-spot:nth-child(2) { bottom: 25%; left: 10%; }
-        .player-spot:nth-child(3) { top: 25%; left: 10%; }
-        .player-spot:nth-child(4) { top: 10px; left: 50%; transform: translateX(-50%); }
-        .player-spot:nth-child(5) { top: 25%; right: 10%; }
-        .player-spot:nth-child(6) { bottom: 25%; right: 10%; }
+        .player-spot:nth-child(1), 
+        .player-spot:nth-child(2), 
+        .player-spot:nth-child(3), 
+        .player-spot:nth-child(4), 
+        .player-spot:nth-child(5), 
+        .player-spot:nth-child(6) {
+            position: absolute;
+        }
+        
+        .player-spot {
+            position: absolute;
+            width: 120px;
+            padding: 8px;
+            background-color: rgba(0,0,0,0.6);
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .current-player {
+            background-color: rgba(0,0,0,0.8);
+            border: 2px solid #f8c471;
+        }
 
         .player-name {
             font-weight: bold;
@@ -173,34 +189,6 @@
         const playerPositions = document.getElementById('playerPositions');
         const gameStatus = document.getElementById('gameStatus');
         
-        // Create example player positions
-        function createPlayers() {
-            logDebug('Creating player spots');
-            
-            // Clear existing players
-            playerPositions.innerHTML = '';
-            
-            // Create 6 player spots
-            for (let i = 0; i < 6; i++) {
-                const playerSpot = document.createElement('div');
-                playerSpot.className = 'player-spot';
-                playerSpot.id = `player-${i}`;
-                
-                playerSpot.innerHTML = `
-                    <div class="player-name">Player ${i+1}</div>
-                    <div class="player-chips">$1000</div>
-                    <div class="player-cards">
-                        <div class="card facedown">?</div>
-                        <div class="card facedown">?</div>
-                    </div>
-                `;
-                
-                playerPositions.appendChild(playerSpot);
-            }
-            
-            logDebug('Player spots created');
-        }
-        
         // Listen for messages from parent frame
         window.addEventListener('message', function(event) {
             logDebug('Received message: ' + event.data.type);
@@ -218,45 +206,97 @@
         
         // Update player information
         function updatePlayers(players) {
+            // Add safety check to handle undefined players
+            if (!players) {
+                logDebug('Warning: players data is undefined');
+                playerPositions.innerHTML = '';
+                return;
+            }
+            
             logDebug(`Updating ${players.length} players`);
             
-            // Create spots if they don't exist
-            if (playerPositions.children.length === 0) {
-                createPlayers();
+            // Clear existing players
+            playerPositions.innerHTML = '';
+            
+            if (players.length === 0) return;
+            
+            // Assume first player is the current player (or could be determined by a property)
+            const currentPlayer = players[0];
+            const otherPlayers = players.slice(1);
+            
+            // Create and position current player at bottom
+            const currentPlayerSpot = createPlayerSpot(currentPlayer, 'bottom');
+            currentPlayerSpot.classList.add('current-player');
+            playerPositions.appendChild(currentPlayerSpot);
+            
+            // Position other players evenly around the top semicircle
+            if (otherPlayers.length > 0) {
+                const angleStep = 180 / (otherPlayers.length + 1);
+                
+                otherPlayers.forEach((player, index) => {
+                    // Calculate position (index + 1 to avoid placing at 0 degrees)
+                    const angle = (index + 1) * angleStep;
+                    const playerSpot = createPlayerSpot(player, angle);
+                    playerPositions.appendChild(playerSpot);
+                });
+            }
+        }
+
+        // Create a player spot with calculated position
+        function createPlayerSpot(player, position) {
+            const playerSpot = document.createElement('div');
+            playerSpot.className = 'player-spot';
+            
+            playerSpot.innerHTML = `
+                <div class="player-name">${player.name}</div>
+                <div class="player-chips">$${player.chips || player.wallet || 1000}</div>
+                <div class="player-cards">
+                    <div class="card facedown">?</div>
+                    <div class="card facedown">?</div>
+                </div>
+            `;
+            
+            // Position the player spot
+            if (position === 'bottom') {
+                // Current player at bottom
+                playerSpot.style.bottom = '10px';
+                playerSpot.style.left = '50%';
+                playerSpot.style.transform = 'translateX(-50%)';
+            } else {
+                // Position around the semicircle based on angle
+                const angle = position; // angle in degrees
+                const radius = 40; // % of container
+                
+                const radians = angle * (Math.PI / 180);
+                const x = 50 + radius * Math.cos(radians); // center x + radius * cos(angle)
+                const y = 50 - radius * Math.sin(radians); // center y - radius * sin(angle)
+                
+                playerSpot.style.left = `${x}%`;
+                playerSpot.style.top = `${y}%`;
+                playerSpot.style.transform = 'translate(-50%, -50%)';
             }
             
-            // Update player information
-            const spots = playerPositions.children;
-            for (let i = 0; i < spots.length; i++) {
-                const spot = spots[i];
-                const playerName = spot.querySelector('.player-name');
-                const playerChips = spot.querySelector('.player-chips');
-                
-                if (i < players.length) {
-                    // Player exists
-                    playerName.textContent = players[i].name;
-                    playerChips.textContent = `$${players[i].chips || 1000}`;
-                    spot.style.opacity = '1';
-                } else {
-                    // Empty seat
-                    playerName.textContent = 'Empty Seat';
-                    playerChips.textContent = '$0';
-                    spot.style.opacity = '0.5';
-                }
-            }
+            return playerSpot;
         }
         
         // Start the game
         function startGame(data) {
-            logDebug('Starting game: ' + data.gameType);
+            logDebug('Starting game: ' + (data?.gameType || 'unknown'));
             gameStatus.textContent = 'Game in progress...';
-            updatePlayers(data.players);
+            
+            // Add safety check before calling updatePlayers
+            if (data && data.players) {
+                updatePlayers(data.players);
+            } else {
+                logDebug('Warning: No player data available for game start');
+                // Use empty array as fallback to clear the table
+                updatePlayers([]);
+            }
         }
         
         // Initialize when the page loads
         window.onload = function() {
             logDebug('Five Card Draw interface initialized');
-            createPlayers();
             
             // Let the parent frame know we're ready
             window.parent.postMessage({

@@ -1072,10 +1072,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
             }
             _ => {
                 loop {
-                    println!("current player: {}", player_name);
-
                     if let Ok(mut lobby_guard) = player_lobby.try_lock(){
-                        println!("current player turn: {}", lobby_guard.current_player_turn);
                         if lobby_guard.current_player_turn == player_name{
                             match  lobby_guard.game_state {
                                 START_OF_ROUND => {
