@@ -86,6 +86,13 @@ enum ClientMessage {
     UpdateInput,
     ShowHand,
     // Add additional actions as needed.
+
+    Check,
+    Call,
+    Raise { amount: i32 },
+    Fold,
+    All_in,
+
 }
 
 #[tokio::main]
