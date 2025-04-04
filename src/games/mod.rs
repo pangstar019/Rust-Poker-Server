@@ -218,108 +218,108 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
 /// 
 /// This function does not return a value. It updates the players' wallets and game statistics.
 /// It also handles the display of hands to active players.
-pub async fn betting_round(lobby: &mut Lobby) {
-    let mut players = lobby.players.lock().await;
-    if players.len() == 1 {
-        // Only one player left, move on
-        return;
-    }
+// pub async fn betting_round(lobby: &mut Lobby) {
+//     let mut players = lobby.players.lock().await;
+//     if players.len() == 1 {
+//         // Only one player left, move on
+//         return;
+//     }
     
-    let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-    let player_names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();
+//     let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+//     let player_names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();
     
-    // Get current player index
-    let mut current_player_index = lobby.first_betting_player;
-    let mut current_lobby_bet = 0;
-    let mut players_remaining = lobby.current_player_count;
-    let mut folded_count = 0;
-    let mut all_folded = false;
+//     // Get current player index
+//     let mut current_player_index = lobby.first_betting_player;
+//     let mut current_lobby_bet = 0;
+//     let mut players_remaining = lobby.current_player_count;
+//     let mut folded_count = 0;
+//     let mut all_folded = false;
     
-    // Process each player's betting turn
-    while players_remaining > 0 {
-        let current_player_name = player_names[current_player_index as usize].clone();
+//     // Process each player's betting turn
+//     while players_remaining > 0 {
+//         let current_player_name = player_names[current_player_index as usize].clone();
         
-        // Get current player state without keeping a lock
-        let player_state = {
-            let current_player = players.iter().find(|p| p.name == current_player_name);
-            if let Some(player) = current_player {
-                player.state
-            } else {
-                FOLDED // Player not found, treat as folded
-            }
-        };
+//         // Get current player state without keeping a lock
+//         let player_state = {
+//             let current_player = players.iter().find(|p| p.name == current_player_name);
+//             if let Some(player) = current_player {
+//                 player.state
+//             } else {
+//                 FOLDED // Player not found, treat as folded
+//             }
+//         };
         
-        // Skip folded or all-in players
-        if player_state == FOLDED || player_state == ALL_IN {
-            current_player_index = (current_player_index + 1) % lobby.current_player_count;
-            players_remaining -= 1;
-            continue;
-        }
+//         // Skip folded or all-in players
+//         if player_state == FOLDED || player_state == ALL_IN {
+//             current_player_index = (current_player_index + 1) % lobby.current_player_count;
+//             players_remaining -= 1;
+//             continue;
+//         }
         
-        // Send betting options to the current player
-        let player_tx = players.iter().find(|p| p.name == current_player_name).map(|p| p.tx.clone());
-        if let Some(tx) = player_tx {
-            let message = format!(
-                "Choose an option:\n1. Check\n2. Raise\n3. Call\n4. Fold\n5. All-in\n6. Display Hand\n\nYour amount to call: {}\nCurrent Pot: {}\nCurrent Wallet: {}",
-                current_lobby_bet - {
-                    // Get player's current bet
-                    players.iter().find(|p| p.name == current_player_name)
-                           .map(|p| p.current_bet)
-                           .unwrap_or(0)
-                }, 
-                lobby.pot, 
-                {
-                    // Get player's wallet
-                    players.iter().find(|p| p.name == current_player_name)
-                           .map(|p| p.wallet)
-                           .unwrap_or(0)
-                }
-            );
-            let _ = tx.send(Message::text(message));
-        }
+//         // Send betting options to the current player
+//         let player_tx = players.iter().find(|p| p.name == current_player_name).map(|p| p.tx.clone());
+//         if let Some(tx) = player_tx {
+//             let message = format!(
+//                 "Choose an option:\n1. Check\n2. Raise\n3. Call\n4. Fold\n5. All-in\n6. Display Hand\n\nYour amount to call: {}\nCurrent Pot: {}\nCurrent Wallet: {}",
+//                 current_lobby_bet - {
+//                     // Get player's current bet
+//                     players.iter().find(|p| p.name == current_player_name)
+//                            .map(|p| p.current_bet)
+//                            .unwrap_or(0)
+//                 }, 
+//                 lobby.pot, 
+//                 {
+//                     // Get player's wallet
+//                     players.iter().find(|p| p.name == current_player_name)
+//                            .map(|p| p.wallet)
+//                            .unwrap_or(0)
+//                 }
+//             );
+//             let _ = tx.send(Message::text(message));
+//         }
         
-        // Release players lock while waiting for input
-        drop(players);
+//         // Release players lock while waiting for input
+//         drop(players);
         
-        // Process player input
-        let choice = lobby.process_player_input(&current_player_name).await;
+//         // Process player input
+//         let choice = lobby.process_player_input(&current_player_name).await;
         
-        // Re-acquire players lock
-        players = lobby.players.lock().await;
+//         // Re-acquire players lock
+//         players = lobby.players.lock().await;
         
-        // Get mutable reference to current player
-        let current_player = players.iter_mut().find(|p| p.name == current_player_name);
+//         // Get mutable reference to current player
+//         let current_player = players.iter_mut().find(|p| p.name == current_player_name);
         
-        if let Some(player) = current_player {
-            // Process player's choice
-            match choice.as_str() {
-                "1" => { // Check
-                    if current_lobby_bet == 0 {
-                        player.state = CHECKED;
-                        // Send broadcast that player checked
-                        lobby.lobby_wide_send(
-                            players_tx.clone(),
-                            format!("{} has checked.", player.name),
-                        ).await;
-                        players_remaining -= 1;
-                        break;
-                    } else {
-                        player.tx.send(Message::text(
-                            "Invalid move: You can't check, there's a bet to call.",
-                        )).ok();
-                    }
-                },
-                // Add other betting options here...
-                _ => {
-                    player.tx.send(Message::text("Invalid action, try again.")).ok();
-                }
-            }
-        }
+//         if let Some(player) = current_player {
+//             // Process player's choice
+//             match choice.as_str() {
+//                 "1" => { // Check
+//                     if current_lobby_bet == 0 {
+//                         player.state = CHECKED;
+//                         // Send broadcast that player checked
+//                         lobby.lobby_wide_send(
+//                             players_tx.clone(),
+//                             format!("{} has checked.", player.name),
+//                         ).await;
+//                         players_remaining -= 1;
+//                         break;
+//                     } else {
+//                         player.tx.send(Message::text(
+//                             "Invalid move: You can't check, there's a bet to call.",
+//                         )).ok();
+//                     }
+//                 },
+//                 // Add other betting options here...
+//                 _ => {
+//                     player.tx.send(Message::text("Invalid action, try again.")).ok();
+//                 }
+//             }
+//         }
         
-        // Move to next player
-        current_player_index = (current_player_index + 1) % lobby.current_player_count;
-    }
-}
+//         // Move to next player
+//         current_player_index = (current_player_index + 1) % lobby.current_player_count;
+//     }
+// }
 
 /// Handles the drawing round for players in a poker game.
 /// The function allows players to choose between standing pat (keeping their hand) or exchanging cards.
@@ -331,141 +331,141 @@ pub async fn betting_round(lobby: &mut Lobby) {
 /// 
 /// This function does not return a value. It updates the players' hands.
 /// It also handles the display of hands to active players.
-pub async fn drawing_round(lobby: &mut Lobby) {
-    let player_names = {
-        let players = lobby.players.lock().await;
-        players.iter()
-              .filter(|p| p.state != FOLDED)
-              .map(|p| p.name.clone())
-              .collect::<Vec<String>>()
-    };
+// pub async fn drawing_round(lobby: &mut Lobby) {
+//     let player_names = {
+//         let players = lobby.players.lock().await;
+//         players.iter()
+//               .filter(|p| p.state != FOLDED)
+//               .map(|p| p.name.clone())
+//               .collect::<Vec<String>>()
+//     };
     
-    if player_names.len() <= 1 {
-        // Only one player left, move on
-        return;
-    }
+//     if player_names.len() <= 1 {
+//         // Only one player left, move on
+//         return;
+//     }
     
-    for player_name in player_names {
-        // Send options to the player
-        let player_tx = {
-            let players = lobby.players.lock().await;
-            players.iter()
-                  .find(|p| p.name == player_name)
-                  .map(|p| p.tx.clone())
-        };
+//     for player_name in player_names {
+//         // Send options to the player
+//         let player_tx = {
+//             let players = lobby.players.lock().await;
+//             players.iter()
+//                   .find(|p| p.name == player_name)
+//                   .map(|p| p.tx.clone())
+//         };
         
-        if let Some(tx) = player_tx {
-            let message = "Drawing round!\nChoose an option:\n    1 - Stand Pat (Keep your hand)\n    2 - Exchange cards";
-            let _ = tx.send(Message::text(message));
-        }
+//         if let Some(tx) = player_tx {
+//             let message = "Drawing round!\nChoose an option:\n    1 - Stand Pat (Keep your hand)\n    2 - Exchange cards";
+//             let _ = tx.send(Message::text(message));
+//         }
         
-        // Process player's choice
-        let choice = lobby.process_player_input(&player_name).await;
+//         // Process player's choice
+//         let choice = lobby.process_player_input(&player_name).await;
         
-        match choice.as_str() {
-            "1" => {
-                // Player chooses to stand pat
-                if let Some(tx) = {
-                    let players = lobby.players.lock().await;
-                    players.iter()
-                          .find(|p| p.name == player_name)
-                          .map(|p| p.tx.clone())
-                } {
-                    let _ = tx.send(Message::text("You chose to Stand Pat."));
-                }
+//         match choice.as_str() {
+//             "1" => {
+//                 // Player chooses to stand pat
+//                 if let Some(tx) = {
+//                     let players = lobby.players.lock().await;
+//                     players.iter()
+//                           .find(|p| p.name == player_name)
+//                           .map(|p| p.tx.clone())
+//                 } {
+//                     let _ = tx.send(Message::text("You chose to Stand Pat."));
+//                 }
                 
-                // Broadcast to other players
-                lobby.broadcast(format!("{} chose to Stand Pat.", player_name)).await;
-            }
-            "2" => {
-                // Player chooses to exchange cards
-                if let Some(tx) = {
-                    let players = lobby.players.lock().await;
-                    players.iter()
-                          .find(|p| p.name == player_name)
-                          .map(|p| p.tx.clone())
-                } {
-                    let _ = tx.send(Message::text("Enter the indices of the cards you want to exchange (comma-separated, e.g., '1,2,3')"));
-                }
+//                 // Broadcast to other players
+//                 lobby.broadcast(format!("{} chose to Stand Pat.", player_name)).await;
+//             }
+//             "2" => {
+//                 // Player chooses to exchange cards
+//                 if let Some(tx) = {
+//                     let players = lobby.players.lock().await;
+//                     players.iter()
+//                           .find(|p| p.name == player_name)
+//                           .map(|p| p.tx.clone())
+//                 } {
+//                     let _ = tx.send(Message::text("Enter the indices of the cards you want to exchange (comma-separated, e.g., '1,2,3')"));
+//                 }
                 
-                let indices_input = lobby.process_player_input(&player_name).await;
+//                 let indices_input = lobby.process_player_input(&player_name).await;
                 
-                // Parse indices
-                let indices: Vec<usize> = indices_input
-                    .split(',')
-                    .filter_map(|s| s.trim().parse::<usize>().ok())
-                    .filter(|&i| i > 0) // 1-based indexing
-                    .map(|i| i - 1) // Convert to 0-based
-                    .collect();
+//                 // Parse indices
+//                 let indices: Vec<usize> = indices_input
+//                     .split(',')
+//                     .filter_map(|s| s.trim().parse::<usize>().ok())
+//                     .filter(|&i| i > 0) // 1-based indexing
+//                     .map(|i| i - 1) // Convert to 0-based
+//                     .collect();
                 
-                if !indices.is_empty() {
-                    // Get current hand and create a new hand without exchanged cards
-                    let current_hand = {
-                        let players = lobby.players.lock().await;
-                        players.iter()
-                              .find(|p| p.name == player_name)
-                              .map(|p| p.hand.clone())
-                              .unwrap_or_default()
-                    };
+//                 if !indices.is_empty() {
+//                     // Get current hand and create a new hand without exchanged cards
+//                     let current_hand = {
+//                         let players = lobby.players.lock().await;
+//                         players.iter()
+//                               .find(|p| p.name == player_name)
+//                               .map(|p| p.hand.clone())
+//                               .unwrap_or_default()
+//                     };
                     
-                    let mut new_hand = Vec::new();
-                    for (i, &card) in current_hand.iter().enumerate() {
-                        if !indices.contains(&i) {
-                            new_hand.push(card);
-                        }
-                    }
+//                     let mut new_hand = Vec::new();
+//                     for (i, &card) in current_hand.iter().enumerate() {
+//                         if !indices.contains(&i) {
+//                             new_hand.push(card);
+//                         }
+//                     }
                     
-                    // Deal new cards to replace exchanged ones
-                    for _ in 0..indices.len() {
-                        new_hand.push(lobby.deck.deal());
-                    }
+//                     // Deal new cards to replace exchanged ones
+//                     for _ in 0..indices.len() {
+//                         new_hand.push(lobby.deck.deal());
+//                     }
                     
-                    // Update player's hand
-                    lobby.update_player_hand(&player_name, new_hand).await;
+//                     // Update player's hand
+//                     lobby.update_player_hand(&player_name, new_hand).await;
                     
-                    // Display new hand to player
-                    let tx = {
-                        let players = lobby.players.lock().await;
-                        players.iter()
-                              .find(|p| p.name == player_name)
-                              .map(|p| p.tx.clone())
-                    };
+//                     // Display new hand to player
+//                     let tx = {
+//                         let players = lobby.players.lock().await;
+//                         players.iter()
+//                               .find(|p| p.name == player_name)
+//                               .map(|p| p.tx.clone())
+//                     };
                     
-                    let hand = {
-                        let players = lobby.players.lock().await;
-                        players.iter()
-                              .find(|p| p.name == player_name)
-                              .map(|p| p.hand.clone())
-                              .unwrap_or_default()
-                    };
+//                     let hand = {
+//                         let players = lobby.players.lock().await;
+//                         players.iter()
+//                               .find(|p| p.name == player_name)
+//                               .map(|p| p.hand.clone())
+//                               .unwrap_or_default()
+//                     };
                     
-                    if let Some(tx) = tx {
-                        display_hand(vec![tx], vec![hand]).await;
-                    }
+//                     if let Some(tx) = tx {
+//                         display_hand(vec![tx], vec![hand]).await;
+//                     }
                     
-                    // Broadcast to other players
-                    lobby.broadcast(format!("{} has exchanged {} cards.", player_name, indices.len())).await;
-                }
-            }
-            "Disconnect" => {
-                // Player disconnected
-                lobby.update_player_state(&player_name, FOLDED).await;
-                lobby.broadcast(format!("{} has disconnected and folded.", player_name)).await;
-            }
-            _ => {
-                // Invalid choice, default to standing pat
-                if let Some(tx) = {
-                    let players = lobby.players.lock().await;
-                    players.iter()
-                          .find(|p| p.name == player_name)
-                          .map(|p| p.tx.clone())
-                } {
-                    let _ = tx.send(Message::text("Invalid choice. Standing pat by default."));
-                }
-            }
-        }
-    }
-}
+//                     // Broadcast to other players
+//                     lobby.broadcast(format!("{} has exchanged {} cards.", player_name, indices.len())).await;
+//                 }
+//             }
+//             "Disconnect" => {
+//                 // Player disconnected
+//                 lobby.update_player_state(&player_name, FOLDED).await;
+//                 lobby.broadcast(format!("{} has disconnected and folded.", player_name)).await;
+//             }
+//             _ => {
+//                 // Invalid choice, default to standing pat
+//                 if let Some(tx) = {
+//                     let players = lobby.players.lock().await;
+//                     players.iter()
+//                           .find(|p| p.name == player_name)
+//                           .map(|p| p.tx.clone())
+//                 } {
+//                     let _ = tx.send(Message::text("Invalid choice. Standing pat by default."));
+//                 }
+//             }
+//         }
+//     }
+// }
 
 /// Checks and processes any pending spectator requests for the current game lobby.
 /// This function should be called at key points in the game state machine.
@@ -936,130 +936,320 @@ pub async fn find_next_start(lobby: &mut Lobby, dealer_index: i32) {
 /// 
 /// This function returns a string indicating the result of the game state machine execution.
 /// It also handles the display of game information to all players.
-pub async fn five_card_game_state_machine(lobby: &mut Lobby) -> String {
-    let mut betting_round_count = 1;
-    let mut players_remaining = lobby.current_player_count;
+pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc<Database>) -> String {
+    let player_name = player.name.clone();
+    let player_lobby = player.lobby.clone();
+    let tx = player.tx.clone();
+    
+    // Update player state through the lobby
+    {
+        let mut lobby = player_lobby.lock().await;
+        lobby.set_player_ready(&player_name, false).await;
+        lobby.update_player_state(&player_name, lobby::IN_LOBBY).await;
+        player.state = IN_LOBBY;
+    }
+    
+    println!("{} has joined lobby: {}", player_name, player_lobby.lock().await.name);
+    
+    // Send initial lobby information - broad to all players in lobby
+    send_lobby_info(&player_lobby).await;
+    send_player_list(&player_lobby).await;
     
     loop {
-        match lobby.game_state {
-            START_OF_ROUND => {
-                lobby.first_betting_player = (lobby.first_betting_player + 1) % lobby.current_player_count;
-                lobby.game_state = ANTE;
-                
-                // Initialize turns counter for tracking player actions
-                lobby.turns_remaining = lobby.current_player_count;
-            }
-            ANTE => {
-                lobby.broadcast("Ante round!\nEveryone adds $10 to the pot.".to_string()).await;
-                
-                // Process ante for all players
-                let player_names = {
-                    let players = lobby.players.lock().await;
-                    players.iter().map(|p| p.name.clone()).collect::<Vec<String>>()
-                };
-                
-                for name in player_names {
-                    let player_wallet = {
-                        let players = lobby.players.lock().await;
-                        players.iter().find(|p| p.name == name)
-                              .map(|p| p.wallet)
-                              .unwrap_or(0)
+        match player.state {
+            IN_LOBBY => {
+                loop {
+                    let result = {
+                        // Get next message from the player's websocket
+                        let mut rx = player.rx.lock().await;
+                        match rx.next().await {
+                            Some(res) => res,
+                            None => continue,
+                        }
                     };
                     
-                    if player_wallet > 10 {
-                        // Deduct ante from player wallet and add to pot
-                        lobby.update_player_wallet(&name, player_wallet - 10).await;
-                        lobby.increment_games_played(&name).await;
-                        lobby.pot += 10;
-                    } else {
-                        // Not enough money, mark as folded
-                        lobby.update_player_state(&name, FOLDED).await;
+                    if let Ok(msg) = result {
+                        if let Ok(text) = msg.to_str() {
+                            // Parse the incoming JSON message
+                            let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
+                            
+                            let lobby_name = player_lobby.lock().await.name.clone();
+            
+                            match client_msg {
+                                Ok(ClientMessage::Quit) => {
+                                    // QUIT LOBBY - Return to server lobby
+                                    let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
+                                    if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                                        server_lobby.lock().await.remove_lobby(lobby_name).await;
+                                    } else {
+                                        server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
+                                    }
+                                    server_lobby.lock().await.broadcast_player_count().await;
+                                    send_lobby_info(&player_lobby).await;
+                                    send_player_list(&player_lobby).await;
+                                    
+                                    // Send redirect back to server lobby
+                                    tx.send(Message::text(r#"{"message": "Leaving lobby...", "redirect": "server_lobby"}"#)).unwrap();
+                                    return "Normal".to_string();
+                                }
+                                Ok(ClientMessage::Disconnect) => {
+                                    // Player disconnected entirely
+                                    let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
+                                    if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                                        server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
+                                    } else {
+                                        server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
+                                    }
+                                    server_lobby.lock().await.broadcast_player_count().await;
+                                    send_lobby_info(&player_lobby).await;
+                                    send_player_list(&player_lobby).await;
+            
+                                    server_lobby.lock().await.remove_player(player_name.clone()).await;
+                                    server_lobby.lock().await.broadcast_player_count().await;
+                                    
+                                    // Update player stats from database
+                                    if let Err(e) = db.update_player_stats(&player).await {
+                                        eprintln!("Failed to update player stats: {}", e);
+                                    }
+                                    
+                                    return "Disconnect".to_string();
+                                }
+                                Ok(ClientMessage::ShowLobbyInfo) => {
+                                    // Send lobby information to client
+                                    send_lobby_info(&player_lobby).await;
+                                    // Update player list
+                                    send_player_list(&player_lobby).await;
+                                }
+                                Ok(ClientMessage::Ready) => {
+                                    // READY UP - through the lobby
+                                    let (_, _) = 
+                                        player_lobby.lock().await.check_ready(player_name.clone()).await;                    
+                                    
+                                    // Update all clients with the new player list
+                                    send_player_list(&player_lobby).await;
+                                }
+                                Ok(ClientMessage::ShowStats) => {
+                                    // Get and send player stats
+                                    let stats = db.player_stats(&player_name).await;
+                                    if let Ok(stats) = stats {
+                                        let stats_json = serde_json::json!({
+                                            "stats": {
+                                                "username": player_name,
+                                                "gamesPlayed": stats.games_played,
+                                                "gamesWon": stats.games_won,
+                                                "wallet": stats.wallet
+                                            }
+                                        });
+                                        tx.send(Message::text(stats_json.to_string())).unwrap();
+                                    } else {
+                                        tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
+                                    }
+                                }
+                                Ok(ClientMessage::StartGame) => {
+                                    // Start the game
+                                    println!("player: {}, received start game", player.name.clone());
+                                    if let Ok(mut player_lobby_guard) = player_lobby.try_lock() {
+                                        player_lobby_guard.setup_game().await;
+                                        player_lobby_guard.update_player_state(&player_name, lobby::IN_GAME).await;
+                                        player.state = IN_GAME;
+                                    }
+                                    break;
+                                }
+                                _ => {
+                                    // Unsupported action in lobby: disregard
+                                    if let Ok(player_lobby_guard) = player_lobby.try_lock() {
+                                        if player_lobby_guard.game_state != JOINABLE{
+                                            break;
+                                        }
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                
-                lobby.broadcast(format!("Current pot: {}", lobby.pot)).await;
-                lobby.game_state = DEAL_CARDS;
-            }
-            DEAL_CARDS => {
-                lobby.broadcast("Dealing cards...".to_string()).await;
-                
-                // Shuffle deck
-                lobby.deck.shuffle();
-                
-                // Deal 5 cards to each active player
-                let player_names = {
-                    let players = lobby.players.lock().await;
-                    players.iter()
-                          .filter(|p| p.state != FOLDED)
-                          .map(|p| p.name.clone())
-                          .collect::<Vec<String>>()
-                };
-                
-                for name in player_names {
-                    let mut hand = Vec::new();
-                    for _ in 0..5 {
-                        hand.push(lobby.deck.deal());
-                    }
-                    lobby.update_player_hand(&name, hand).await;
-                }
-                
-                // Display hands to players
-                {
-                    let players = lobby.players.lock().await;
-                    let active_players = players.iter().filter(|p| p.state != FOLDED).collect::<Vec<_>>();
-                    let players_tx = active_players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-                    let players_hands = active_players.iter().map(|p| p.hand.clone()).collect::<Vec<_>>();
-                    display_hand(players_tx, players_hands).await;
-                }
-                
-                lobby.game_state = FIRST_BETTING_ROUND;
-            }
-            FIRST_BETTING_ROUND => {
-                lobby.broadcast("------First betting round!------".to_string()).await;
-                betting_round(lobby).await;
-                
-                if lobby.game_state == SHOWDOWN {
-                    continue;
-                } else {
-                    lobby.game_state = DRAW;
-                    lobby.broadcast(format!("First betting round complete!\nCurrent pot: {}", lobby.pot)).await;
-                }
-            }
-            DRAW => {
-                lobby.broadcast("------Drawing round!------".to_string()).await;
-                drawing_round(lobby).await;
-                lobby.game_state = SECOND_BETTING_ROUND;
-            }
-            SECOND_BETTING_ROUND => {
-                lobby.broadcast("Second betting round!".to_string()).await;
-                betting_round(lobby).await;
-                lobby.broadcast(format!("Second betting round complete!\nCurrent pot: {}", lobby.pot)).await;
-                lobby.game_state = SHOWDOWN;
-            }
-            SHOWDOWN => {
-                lobby.broadcast("------Showdown Round!------".to_string()).await;
-                showdown(lobby).await;
-                lobby.game_state = END_OF_ROUND;
-            }
-            END_OF_ROUND => {
-                lobby.game_state = UPDATE_DB;
-            }
-            UPDATE_DB => {
-                lobby.pot = 0;
-                lobby.update_db().await;
-                
-                // Add a mechanism to check for spectators here
-                check_for_spectators(lobby).await;
-                
-                return "".to_string();
             }
             _ => {
-                panic!("Invalid game state: {}", lobby.game_state);
+                loop {
+                    println!("current player: {}", player_name);
+
+                    if let Ok(mut lobby_guard) = player_lobby.try_lock(){
+                        println!("current player turn: {}", lobby_guard.current_player_turn);
+                        if lobby_guard.current_player_turn == player_name{
+                            match  lobby_guard.game_state {
+                                START_OF_ROUND => {
+                                    lobby_guard.first_betting_player = (lobby_guard.first_betting_player + 1) % lobby_guard.current_player_count;
+                                    lobby_guard.game_state = ANTE;
+                                    
+                                    // Initialize turns counter for tracking player actions
+                                    lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                }
+                                ANTE => {
+                                    // lobby_guard.broadcast("ANTE".to_string()).await;
+                                    tx.send(Message::text(r#"{"message": "ANTE"}"#)).unwrap();
+                                    println!("ante round message sent to player: {}", player_name);
+                                    if player.wallet > 10 {
+                                        // Deduct ante from player wallet and add to pot
+                                        player.wallet -= 10;
+                                        player.games_played += 1;
+                                        lobby_guard.pot += 10;
+                                    } else {
+                                        // Not enough money, mark as folded
+                                        lobby_guard.update_player_state(&player_name, FOLDED).await;
+                                        player.state = FOLDED;
+                                    }
+                                    lobby_guard.turns_remaining -= 1;
+                                    if lobby_guard.turns_remaining == 0{
+                                        lobby_guard.game_state = DEAL_CARDS;
+                                        lobby_guard.get_next_player(true).await;
+                                    } else {
+                                        lobby_guard.get_next_player(false).await;
+                                    }
+                                }
+                                DEAL_CARDS => {
+                                    println!("player: {} reached the end of state machine", player_name);
+                                    lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
+                                    lobby_guard.set_player_ready(&player_name, false).await;
+
+                                    player.state = IN_LOBBY;
+                                    player.ready = false;
+                                    lobby_guard.get_next_player(false).await;
+                                    break;
+                                }
+                                //     lobby.broadcast("Dealing cards...".to_string()).await;
+                                    
+                                //     // Shuffle deck
+                                //     lobby.deck.shuffle();
+                                    
+                                //     // Deal 5 cards to each active player
+                                //     let player_names = {
+                                //         let players = lobby.players.lock().await;
+                                //         players.iter()
+                                //               .filter(|p| p.state != FOLDED)
+                                //               .map(|p| p.name.clone())
+                                //               .collect::<Vec<String>>()
+                                //     };
+                                    
+                                //     for name in player_names {
+                                //         let mut hand = Vec::new();
+                                //         for _ in 0..5 {
+                                //             hand.push(lobby.deck.deal());
+                                //         }
+                                //         lobby.update_player_hand(&name, hand).await;
+                                //     }
+                                    
+                                //     // Display hands to players
+                                //     {
+                                //         let players = lobby.players.lock().await;
+                                //         let active_players = players.iter().filter(|p| p.state != FOLDED).collect::<Vec<_>>();
+                                //         let players_tx = active_players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+                                //         let players_hands = active_players.iter().map(|p| p.hand.clone()).collect::<Vec<_>>();
+                                //         display_hand(players_tx, players_hands).await;
+                                //     }
+                                    
+                                //     lobby.game_state = FIRST_BETTING_ROUND;
+                                // }
+                                // FIRST_BETTING_ROUND => {
+                                //     lobby.broadcast("------First betting round!------".to_string()).await;
+                                //     betting_round(lobby).await;
+                                    
+                                //     if lobby.game_state == SHOWDOWN {
+                                //         continue;
+                                //     } else {
+                                //         lobby.game_state = DRAW;
+                                //         lobby.broadcast(format!("First betting round complete!\nCurrent pot: {}", lobby.pot)).await;
+                                //     }
+                                // }
+                                // DRAW => {
+                                //     lobby.broadcast("------Drawing round!------".to_string()).await;
+                                //     drawing_round(lobby).await;
+                                //     lobby.game_state = SECOND_BETTING_ROUND;
+                                // }
+                                // SECOND_BETTING_ROUND => {
+                                //     lobby.broadcast("Second betting round!".to_string()).await;
+                                //     betting_round(lobby).await;
+                                //     lobby.broadcast(format!("Second betting round complete!\nCurrent pot: {}", lobby.pot)).await;
+                                //     lobby.game_state = SHOWDOWN;
+                                // }
+                                // SHOWDOWN => {
+                                //     lobby.broadcast("------Showdown Round!------".to_string()).await;
+                                //     showdown(lobby).await;
+                                //     lobby.game_state = END_OF_ROUND;
+                                // }
+                                // END_OF_ROUND => {
+                                //     lobby.game_state = UPDATE_DB;
+                                // }
+                                // UPDATE_DB => {
+                                //     lobby.pot = 0;
+                                //     lobby.update_db().await;
+                                    
+                                //     // Add a mechanism to check for spectators here
+                                //     check_for_spectators(lobby).await;
+                                    
+                                //     return "".to_string();
+                                // }
+                                _ => {
+                                    panic!("Invalid game state: {}", lobby_guard.game_state);
+                                }
+                            }
+                        } else {
+                            drop(lobby_guard);
+                        }
+                    }
+                    let result = {
+                        // Get next message from the player's websocket
+                        let mut rx = player.rx.lock().await;
+                        match rx.next().await {
+                            Some(res) => res,
+                            None => continue,
+                        }
+                    };
+                    if let Ok(msg) = result {
+                        if let Ok(text) = msg.to_str() {
+                            // Parse the incoming JSON message
+                            let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
+                            match client_msg {
+
+                                /*
+                                Need to integrate with game logic so the indexing will work
+                                also need to update DB for player in-game wallet/games_played
+                                 */
+                                Ok(ClientMessage::Disconnect) => {
+                                    // Player disconnected entirely
+                                    let lobby_name = player_lobby.lock().await.name.clone();
+                                    let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
+                                    if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                                        server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
+                                    } else {
+                                        server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
+                                    }
+                                    server_lobby.lock().await.broadcast_player_count().await;
+                                    send_lobby_info(&player_lobby).await;
+                                    send_player_list(&player_lobby).await;
+
+                                    server_lobby.lock().await.remove_player(player_name.clone()).await;
+                                    server_lobby.lock().await.broadcast_player_count().await;
+                                    
+                                    // Update player stats from database
+                                    if let Err(e) = db.update_player_stats(&player).await {
+                                        eprintln!("Failed to update player stats: {}", e);
+                                    }
+                                    
+                                    return "Disconnect".to_string();
+                                }
+                                _ => {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         
         // After each state transition, check for spectators
-        check_for_spectators(lobby).await;
+        // check_for_spectators(lobby_).await;
     }
 }
 
@@ -1108,7 +1298,7 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) -> String {
             }
             BETTING_ROUND => {
                 lobby.broadcast(format!("------Betting round {}!------", betting_round_count)).await;
-                betting_round(lobby).await;
+                // betting_round(lobby).await;
                 
                 // After betting round completed
                 check_for_spectators(lobby).await;
@@ -1206,7 +1396,7 @@ pub async fn texas_holdem_game_state_machine(lobby: &mut Lobby) -> String {
                 if betting_round_count !=1 {
                     find_next_start(lobby, dealer_index).await; // find the next player to start the betting round (left most player thats not folded)
                 }
-                betting_round(lobby).await;
+                // betting_round(lobby).await;
                 
                 // After betting round completed
                 check_for_spectators(lobby).await;

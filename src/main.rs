@@ -419,17 +419,37 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                             server_lobby.lock().await.update_lobby_names_status(lobby_name.clone()).await;
                             
                             if join_result == lobby::SUCCESS {
+                                let player_lobby_type = player_obj.lobby.lock().await.game_type.clone();
                                 // Successfully joined the lobby
+                                println!("successful joining");
                                 tx.send(Message::text(
                                     format!(r#"{{"message": "Successfully joined lobby: {}!", "redirect": "lobby"}}"#, lobby_name.clone())
                                 )).unwrap();
-                                let mut result = "".to_string();
+                                let result;
                                 if spectate {
                                     result = join_as_spectator(server_lobby.clone(), player_obj.clone(), db.clone()).await;
                                 } else {
-                                    result = join_lobby(server_lobby.clone(), player_obj, db.clone(), spectate).await;
+                                    println!("{}", player_lobby_type);
+                                    match player_lobby_type {
+                                        lobby::FIVE_CARD_DRAW => {
+                                            result = games::five_card_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
+                                        }
+                                        // lobby::SEVEN_CARD_STUD => {
+                                        //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
+
+                                        // }
+                                        // lobby::TEXAS_HOLD_EM => {
+                                        //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
+                                        // }
+                                        _ => {
+                                            continue;
+                                        }
+                                    }
                                 }
                                 if result == "Disconnect" {
+                                    /*
+                                    Use here to do more actions when the player disconnects from server if needed
+                                     */
                                     break;
                                 }
                                 
@@ -485,7 +505,7 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
 /// # Returns
 /// 
 /// This function returns a `String` indicating the exit status of the player.
-async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Database>, spectator: bool) -> String {
+async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Database>) -> String {
     let player_name = player.name.clone();
     let player_lobby = player.lobby.clone();
     let tx = player.tx.clone();
@@ -522,20 +542,23 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
 
                 match client_msg {
                     Ok(ClientMessage::Quit) => {
-                        // QUIT LOBBY - Return to server lobby
-                        let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
-                        if lobby_status == lobby::GAME_LOBBY_EMPTY {
-                            server_lobby.lock().await.remove_lobby(lobby_name).await;
-                        } else {
-                            server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
-                        }
-                        server_lobby.lock().await.broadcast_player_count().await;
-                        send_lobby_info(&player_lobby).await;
-                        send_player_list(&player_lobby).await;
+                        // // QUIT LOBBY - Return to server lobby
+                        // let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
+                        // if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                        //     server_lobby.lock().await.remove_lobby(lobby_name).await;
+                        // } else {
+                        //     server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
+                        // }
+                        // server_lobby.lock().await.broadcast_player_count().await;
+                        // send_lobby_info(&player_lobby).await;
+                        // send_player_list(&player_lobby).await;
                         
-                        // Send redirect back to server lobby
-                        tx.send(Message::text(r#"{"message": "Leaving lobby...", "redirect": "server_lobby"}"#)).unwrap();
-                        return "Normal".to_string();
+                        // // Send redirect back to server lobby
+                        // tx.send(Message::text(r#"{"message": "Leaving lobby...", "redirect": "server_lobby"}"#)).unwrap();
+                        // return "Normal".to_string();
+
+                        player_lobby.lock().await.game_state = lobby::END_OF_ROUND;
+                        println!("player {} chnaged lobby state to {}", player_name, player_lobby.lock().await.game_state);
                     }
                     Ok(ClientMessage::Disconnect) => {
                         // Player disconnected entirely
@@ -570,11 +593,12 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                     }
                     Ok(ClientMessage::Ready) => {
                         // READY UP - through the lobby
-                        let (ready_player_count, lobby_player_count) = 
+                        let (_, _) = 
                             player_lobby.lock().await.check_ready(player_name.clone()).await;                    
                         
                         // Update all clients with the new player list
                         send_player_list(&player_lobby).await;
+                        println!("for player {}, lobby state is {}", player_name, player_lobby.lock().await.game_state);
                     }
                     Ok(ClientMessage::ShowStats) => {
                         // Get and send player stats
@@ -596,17 +620,14 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                     Ok(ClientMessage::StartGame) => {
                         // Start the game
                         println!("player: {}, received start game", player.name.clone());
+                        
+                        // Extract the necessary information without holding the lock
                         let game_type = player_lobby.lock().await.game_type.clone();
                         
-                        // Instead of modifying player directly, start the game through the lobby
-                        let mut lobby = player_lobby.lock().await;
-                        lobby.start_game().await;
                         
-                        // After game ends, check if player is still connected
-                        let maybe_player = lobby.get_player_by_name(&player_name).await;
-                        if maybe_player.is_none() {
-                            return "Disconnect".to_string();
-                        }
+                        
+                        
+                        
                     }
                     _ => {
                         // Unsupported action in lobby: disregard
