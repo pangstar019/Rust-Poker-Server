@@ -237,6 +237,10 @@ pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_mes
             if player.wallet >= current_max_bet - player.current_bet {
                 player.wallet -= current_max_bet - player.current_bet;
                 player.current_bet = current_max_bet;
+                player.state = CALLED;
+                if player.wallet == 0 {
+                    player.state = ALL_IN;
+                }
                 return true;
             } else {
                 return false;
@@ -248,6 +252,9 @@ pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_mes
                     player.state = RAISED;
                     player.wallet -= amount;
                     player.current_bet += amount;
+                    if player.wallet == 0 {
+                        player.state = ALL_IN;
+                    }
                     return true;
                 } else {
                     return false;
@@ -257,12 +264,13 @@ pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_mes
             }
         }
         ClientMessage::All_in => {
+            player.state = ALL_IN;
             let all_in_amount = player.wallet;
             player.wallet = 0;
             player.current_bet += all_in_amount;
             return true;
         }
-        _ => {}
+        _ => false
     }
     
 }
@@ -1046,7 +1054,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     }
                                     lobby_guard.turns_remaining -= 1;
                                     if lobby_guard.turns_remaining == 0{
-                                        lobby_guard.game_state = DEAL_CARDS;
+                                        lobby_guard.game_state = FIRST_BETTING_ROUND;
                                         lobby_guard.get_next_player(true).await;
                                     } else {
                                         lobby_guard.get_next_player(false).await;
@@ -1064,19 +1072,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     } else {
                                         lobby_guard.get_next_player(false).await;
                                     }
-
-
-                                    // ---------- use the below for end sequence ----
-                                    println!("player: {} reached the end of state machine", player_name);
-                                    lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
-                                    lobby_guard.set_player_ready(&player_name, false).await;
-
-                                    player.state = IN_LOBBY;
-                                    player.ready = false;
-                                    lobby_guard.get_next_player(false).await;
-                                    println!("lobby pot: {}", lobby_guard.pot);
-                                    break;
-                                    // -------------------------------------
                                 }
                                 //     lobby.broadcast("Dealing cards...".to_string()).await;
                                     
@@ -1111,13 +1106,14 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     
                                 //     lobby.game_state = FIRST_BETTING_ROUND;
                                 // }
-                                FIRST_BETTING_ROUND => {
-                                    lobby_guard.broadcast("------First betting round!------".to_string()).await;
+                                FIRST_BETTING_ROUND | SECOND_BETTING_ROUND => {
+                                    lobby_guard.broadcast("------ betting round!------".to_string()).await;
                                     if player.state != FOLDED && player.state != ALL_IN {
                                         // lobby.broadcast(format!("{}'s turn to act!", player.name)).await;
-
+                                        println!("player {} state {}", player.name, player.state);
                                         // send the JSON message to update the UI for the player
                                         tx.send(Message::text(format!(r#"{{"message": "{}'s turn to act!"}}"#, player.name))).unwrap();
+                                        tx.send(Message::text(r#"{"message": "BettingRound"}"#)).unwrap();
                                         loop {
                                             // UI has been updated, get the players response
                                             let result = {
@@ -1163,39 +1159,66 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                             // pass in the players input and validate it (check, call, raise, fold, all in)
                                                             if let Ok(valid_message) = client_msg {
                                                                 if betting_round(&mut player, lobby_guard.current_max_bet.clone(), valid_message).await {
-                                                                    // if returns true, we update the lobby with the new information from the player clone
-                                                                    // update based off the players state now
+                                                                    // update the server lobby player reference with updated clone data
+                                                                    // only values that are changed
+                                                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].current_bet = player.current_bet;
+                                                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].state = player.state;
+                                                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].wallet = player.wallet;
+                                                                    
                                                                     let player_state = player.state.clone();
-                                                                    // match player_state {
+                                                                    match player_state {
+                                                                        CHECKED | CALLED | FOLDED => {
+                                                                            lobby_guard.turns_remaining -= 1;
+                                                                        }
+                                                                        ALL_IN => {
+                                                                            // if they went all in, did it raise the max bet
+                                                                            if player.current_bet > lobby_guard.current_max_bet {
+                                                                                lobby_guard.current_max_bet = player.current_bet.clone();
+                                                                                lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
+                                                                                lobby_guard.get_next_player(false).await;  
+                                                                                break;  
+                                                                            }
+                                                                        }
+                                                                        RAISED  => {
+                                                                            lobby_guard.current_max_bet = player.current_bet.clone();
+                                                                            lobby_guard.pot += player.current_bet - prev_player_bet;
 
-                                                                    // }
+                                                                            // reset the turns_remaining counter
+                                                                            lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
+                                                                            lobby_guard.get_next_player(false).await;
+                                                                            break;
+                                                                        }
+                                                                        _ => {
+
+                                                                        }
+                                                                    }
+                                                                    // move to the next player and update the game state accordingly
+                                                                    if lobby_guard.turns_remaining == 0 {
+                                                                        if lobby_guard.game_state == FIRST_BETTING_ROUND {
+                                                                            lobby_guard.game_state = DRAW;
+                                                                        } else if lobby_guard.game_state == SECOND_BETTING_ROUND {
+                                                                            lobby_guard.game_state = SHOWDOWN;
+                                                                        }
+                                                                        lobby_guard.get_next_player(true).await;
+                                                                    } else {
+                                                                        lobby_guard.get_next_player(false).await;
+                                                                    }
+
+                                                                    // check if all but one player folded
+                                                                    let mut folded_count = 0;
+                                                                    for player in lobby_guard.players.lock().await.iter() {
+                                                                        if player.state == FOLDED {
+                                                                            folded_count += 1;
+                                                                        }
+                                                                    }
+                                                                    if folded_count == lobby_guard.current_player_count - 1 {
+                                                                        // if all but one player folded, end the game
+                                                                        lobby_guard.game_state = SHOWDOWN;
+                                                                    }
+                                                                    break;
                                                                 }
                                                             } else {
-                                                                println!("Invalid client message received: {:?}", valid_message);
-                                                            }
-                
-                                                            // if the player raised
-                                                            if player.current_bet > lobby_guard.current_max_bet {
-                                                                lobby_guard.current_max_bet = player.current_bet;
-                                                                // reset the turns_remaining counter
-                                                                lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
-                                                                lobby_guard.get_next_player(false).await;
-
-                                                                lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                break;
-                                                            }
-                                                            // otherwise the player matched whatever the lobby current max bet is (check, or called)
-                                                            else {
-                                                                lobby_guard.turns_remaining -= 1;
-                                                                if lobby_guard.turns_remaining == 0{
-                                                                    lobby_guard.game_state = DRAW;
-                                                                    lobby_guard.get_next_player(true).await;
-                                                                } else {
-                                                                    lobby_guard.get_next_player(false).await;
-                                                                }
-                
-                                                                lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                break;
+                                                                println!("Invalid client message received BAD, they try again");
                                                             }
                                                         }
                                                     }
@@ -1204,19 +1227,24 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                             
                                         }
                                     }
-                                    
-                                    if lobby.game_state == SHOWDOWN {
-                                        continue;
-                                    } else {
-                                        lobby.game_state = DRAW;
-                                        lobby.broadcast(format!("First betting round complete!\nCurrent pot: {}", lobby.pot)).await;
-                                    }
                                 }
-                                // DRAW => {
-                                //     lobby.broadcast("------Drawing round!------".to_string()).await;
-                                //     drawing_round(lobby).await;
-                                //     lobby.game_state = SECOND_BETTING_ROUND;
-                                // }
+                                DRAW => {
+                                    // ---------- use the below for end sequence ----
+                                    println!("player: {} reached the end of state machine", player_name);
+                                    lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
+                                    lobby_guard.set_player_ready(&player_name, false).await;
+
+                                    player.state = IN_LOBBY;
+                                    player.ready = false;
+                                    lobby_guard.get_next_player(false).await;
+                                    println!("lobby pot: {}", lobby_guard.pot);
+                                    break;
+                                    // -------------------------------------
+
+                                    // lobby.broadcast("------Drawing round!------".to_string()).await;
+                                    // drawing_round(lobby).await;
+                                    // lobby.game_state = SECOND_BETTING_ROUND;
+                                }
                                 // SECOND_BETTING_ROUND => {
                                 //     lobby.broadcast("Second betting round!".to_string()).await;
                                 //     betting_round(lobby).await;

@@ -86,7 +86,7 @@ enum ClientMessage {
     UpdateInput,
     ShowHand,
     // Add additional actions as needed.
-
+    BettingRound,
     Check,
     Call,
     Raise { amount: i32 },
