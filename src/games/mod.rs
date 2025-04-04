@@ -900,6 +900,8 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
     // Send initial lobby information - broad to all players in lobby
     send_lobby_info(&player_lobby).await;
     send_player_list(&player_lobby).await;
+    // Add a delay of one second
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     
     loop {
         match player.state {
@@ -1072,6 +1074,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     player.state = IN_LOBBY;
                                     player.ready = false;
                                     lobby_guard.get_next_player(false).await;
+                                    println!("lobby pot: {}", lobby_guard.pot);
                                     break;
                                     // -------------------------------------
                                 }

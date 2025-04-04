@@ -177,73 +177,99 @@
     <script>
         // Debug element for troubleshooting
         const debug = document.getElementById('debug');
-        const logDebug = (msg) => {
-            console.log(msg);
-            debug.textContent = msg;
-            setTimeout(() => debug.textContent = '', 5000);
-        };
         
-        logDebug('Game frame loaded');
+        console.log('Game frame loaded');
         
         // Game elements
         const playerPositions = document.getElementById('playerPositions');
         const gameStatus = document.getElementById('gameStatus');
-        
-        // Listen for messages from parent frame
-        window.addEventListener('message', function(event) {
-            logDebug('Received message: ' + event.data.type);
-            
-            if (event.data.type === 'command') {
-                if (event.data.command === 'updatePlayers') {
-                    updatePlayers(event.data.data.players);
-                }
-                
-                if (event.data.command === 'startGame') {
-                    startGame(event.data.data);
-                }
+
+        window.addEventListener("message", (event) => {
+            console.log("Received message from parent frame: ", event);
+            if (event.data.type === "command") {
+                handleMessage(event.data);
             }
         });
         
+        function handleMessage(data) {
+            if (data.command === "updatePlayers") {
+                updatePlayers(data.data.players);
+            } else if (data.command === "startGame") {
+                startGame(data);
+            }
+        }
+        
         // Update player information
         function updatePlayers(players) {
-            // Add safety check to handle undefined players
+            // Safety checks for undefined or non-array
             if (!players) {
-                logDebug('Warning: players data is undefined');
+                console.log('Warning: players data is undefined');
                 playerPositions.innerHTML = '';
                 return;
             }
+
+            if (!Array.isArray(players)) {
+                console.log('Warning: players is not an array, attempting to fix');
+                if (typeof players === 'object') {
+                    players = [players];
+                } else {
+                    playerPositions.innerHTML = '';
+                    return;
+                }
+            }
             
-            logDebug(`Updating ${players.length} players`);
+            console.log(`Updating ${players.length} players`);
             
             // Clear existing players
             playerPositions.innerHTML = '';
             
             if (players.length === 0) return;
             
-            // Assume first player is the current player (or could be determined by a property)
-            const currentPlayer = players[0];
-            const otherPlayers = players.slice(1);
+            // Get stored current player name
+            const storedCurrentPlayerName = localStorage.getItem('currentPlayerName');
+            console.log("Stored current player name: ", storedCurrentPlayerName);
             
-            // Create and position current player at bottom
-            const currentPlayerSpot = createPlayerSpot(currentPlayer, 'bottom');
-            currentPlayerSpot.classList.add('current-player');
-            playerPositions.appendChild(currentPlayerSpot);
+            // Find current player index in original array
+            let currentPlayerIndex = -1;
+            if (storedCurrentPlayerName) {
+                currentPlayerIndex = players.findIndex(p => p.name === storedCurrentPlayerName);
+            }
             
-            // Position other players evenly around the top semicircle
-            if (otherPlayers.length > 0) {
-                const angleStep = 180 / (otherPlayers.length + 1);
+            // If current player not found, use first player
+            if (currentPlayerIndex === -1) {
+                currentPlayerIndex = 0;
+            }
+            
+            // Position players around the table, maintaining the original order
+            const totalPlayers = players.length;
+            
+            // Calculate the angle step based on total players
+            const angleStep = 360 / totalPlayers;
+            
+            // Create and position all players, starting with the current player at bottom (90 degrees in math terms)
+            for (let i = 0; i < totalPlayers; i++) {
+                // Calculate the player's position in the original array
+                const playerIndex = (currentPlayerIndex + i) % totalPlayers;
+                const player = players[playerIndex];
                 
-                otherPlayers.forEach((player, index) => {
-                    // Calculate position (index + 1 to avoid placing at 0 degrees)
-                    const angle = (index + 1) * angleStep;
-                    const playerSpot = createPlayerSpot(player, angle);
-                    playerPositions.appendChild(playerSpot);
-                });
+                // Calculate the angle, starting at 90 degrees (bottom) and moving clockwise
+                // Note: In CSS, 90° is bottom, 270° is top, 0° is right, 180° is left
+                const angle = (90 + (i * angleStep)) % 360;
+                
+                // Create the player spot
+                const playerSpot = createPlayerSpot(player, angle);
+                
+                // Add "current-player" class if this is the current player
+                if (playerIndex === currentPlayerIndex) {
+                    playerSpot.classList.add('current-player');
+                }
+                
+                playerPositions.appendChild(playerSpot);
             }
         }
 
         // Create a player spot with calculated position
-        function createPlayerSpot(player, position) {
+        function createPlayerSpot(player, angle) {
             const playerSpot = document.createElement('div');
             playerSpot.className = 'player-spot';
             
@@ -256,24 +282,22 @@
                 </div>
             `;
             
-            // Position the player spot
-            if (position === 'bottom') {
-                // Current player at bottom
+            // Position based on angle
+            const radius = 40; // % of container
+            const radians = angle * (Math.PI / 180);
+            const x = 50 + radius * Math.cos(radians); // center x + radius * cos(angle)
+            const y = 50 + radius * Math.sin(radians); // center y + radius * sin(angle)
+            
+            playerSpot.style.left = `${x}%`;
+            playerSpot.style.top = `${y}%`;
+            playerSpot.style.transform = 'translate(-50%, -50%)';
+            
+            // Special styling for current player (bottom position)
+            if (angle === 90) {
                 playerSpot.style.bottom = '10px';
                 playerSpot.style.left = '50%';
+                playerSpot.style.top = 'auto';
                 playerSpot.style.transform = 'translateX(-50%)';
-            } else {
-                // Position around the semicircle based on angle
-                const angle = position; // angle in degrees
-                const radius = 40; // % of container
-                
-                const radians = angle * (Math.PI / 180);
-                const x = 50 + radius * Math.cos(radians); // center x + radius * cos(angle)
-                const y = 50 - radius * Math.sin(radians); // center y - radius * sin(angle)
-                
-                playerSpot.style.left = `${x}%`;
-                playerSpot.style.top = `${y}%`;
-                playerSpot.style.transform = 'translate(-50%, -50%)';
             }
             
             return playerSpot;
@@ -281,22 +305,29 @@
         
         // Start the game
         function startGame(data) {
-            logDebug('Starting game: ' + (data?.gameType || 'unknown'));
+            console.log('Starting game');
             gameStatus.textContent = 'Game in progress...';
             
-            // Add safety check before calling updatePlayers
-            if (data && data.players) {
+            // Log what we received to debug
+            console.log("Game start data received:", data);
+            
+            // Ensure data has the correct structure
+            if (data && Array.isArray(data.players)) {
+                updatePlayers(data.players);
+            } else if (data && data.players) {
+                // If data.players exists but is not an array, try to use it
+                console.log('Player data exists but may have wrong format');
                 updatePlayers(data.players);
             } else {
-                logDebug('Warning: No player data available for game start');
-                // Use empty array as fallback to clear the table
+                // Use empty array as fallback
+                console.log('Warning: No player data available for game start');
                 updatePlayers([]);
             }
         }
         
         // Initialize when the page loads
         window.onload = function() {
-            logDebug('Five Card Draw interface initialized');
+            console.log('Five Card Draw interface initialized');
             
             // Let the parent frame know we're ready
             window.parent.postMessage({

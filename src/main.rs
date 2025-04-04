@@ -791,5 +791,6 @@ async fn send_player_list(player_lobby: &Arc<Mutex<Lobby>>) {
         // Send player list to all players in the lobby
         tx.send(Message::text(player_list.to_string())).unwrap();
     }
+    println!("players list sent");
 }
 

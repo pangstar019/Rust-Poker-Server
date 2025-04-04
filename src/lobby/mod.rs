@@ -607,7 +607,14 @@ impl Lobby {
         } else {
             self.current_player_index = (self.current_player_index + 1) % self.current_player_count;
         }
-        self.current_player_turn = self.players.lock().await[self.current_player_index as usize].name.clone();
+        loop{
+            if self.players.lock().await[self.current_player_index as usize].state != FOLDED {
+                self.current_player_turn = self.players.lock().await[self.current_player_index as usize].name.clone();
+                return;
+            } else {
+                self.current_player_index = (self.current_player_index + 1) % self.current_player_count;
+            }
+        }
     }
 }
 
