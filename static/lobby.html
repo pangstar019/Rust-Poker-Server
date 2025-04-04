@@ -512,6 +512,7 @@
 
           // Handle player list
           if (response.players) {
+            console.log("Updating player list:", response.players);
             updatePlayerList(response.players);
             
             // Check if all players are ready
@@ -526,11 +527,6 @@
           // Handle stats
           if (response.stats) {
             updateStats(response.stats);
-          }
-          
-          // Handle game start
-          if (response.gameStarted) {
-            startGame();
           }
         } catch (e) {
           console.error("Error parsing message:", e);
@@ -565,14 +561,15 @@
         if (players.length >= 2) {
           const allReady = players.every(player => player.ready);
           if (allReady) {
-            console.log("All players are ready, starting game...");
-            startGame();
+            console.log("Starting game with players:", players);
+            console.log("Starting lobby info:", currentLobbyInfo);
+            startGame(players);
           }
         }
       }
       
       // Modified startGame function
-      function startGame() {
+      function startGame(players) {
         sendToServer(JSON.stringify({ action: "StartGame" }));
         if (gameActive) return; // Prevent multiple starts
         
@@ -585,7 +582,7 @@
         
         // Send a message to the game iframe to start the game
         sendGameCommand("startGame", {
-          players: currentLobbyInfo.players,
+          players: players,
           gameType: currentLobbyInfo.gameType
         });
         

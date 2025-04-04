@@ -467,7 +467,6 @@ impl Lobby {
         }
     }
     pub async fn broadcast(&self, message: String) {
-        println!("Broadcasting: {}", message);
         
         // Check if the message is already valid JSON, otherwise format it
         let json_message = if message.trim().starts_with('{') && message.trim().ends_with('}') {
@@ -482,7 +481,9 @@ impl Lobby {
         
         // Broadcast to players
         {
+            println!("broadcast to players");
             let players = self.players.lock().await;
+            println!("players lock acquired");
             for player in players.iter() {
                 let _ = player.tx.send(Message::text(json_message.clone()));
             }
@@ -490,6 +491,7 @@ impl Lobby {
 
         // Broadcast to spectators
         {
+            println!("broadcast to spectators");
             let spectators = self.spectators.lock().await;
             for spectator in spectators.iter() {
                 let _ = spectator.tx.send(Message::text(json_message.clone()));
@@ -550,7 +552,9 @@ impl Lobby {
     pub async fn setup_game(&mut self) {
         self.current_player_index = self.first_betting_player;
         self.current_player_turn = self.players.lock().await[self.first_betting_player as usize].name.clone();
+        println!("current player turn: {}", self.current_player_turn);
         self.game_state = START_OF_ROUND;
+        self.deck.shuffle();
         println!("lobby {} set up for startin game.", self.name);
     }
 
@@ -615,6 +619,127 @@ impl Lobby {
                 self.current_player_index = (self.current_player_index + 1) % self.current_player_count;
             }
         }
+    }
+
+    pub async fn update_player_hand(&mut self, player_name: &str, hand: Vec<i32>) {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.hand = hand;
+        }
+    }
+
+    pub async fn display_hands(&self) {
+        let players = self.players.lock().await;
+        let mut hands_data = Vec::new();
+        
+        // Collect all player hands
+        for player in players.iter() {
+            // Create a JSON structure for each player's hand
+            let hand_obj = serde_json::json!({
+                "playerName": player.name,
+                "hand": player.hand,
+                "state": player.state  // Include state to check if player folded
+            });
+            
+            hands_data.push(hand_obj);
+        }
+        
+        // Create the complete hands update message
+        let hands_message = serde_json::json!({
+            "type": "handsUpdate",
+            "hands": hands_data
+        });
+        
+        // Convert to string
+        let hands_json = hands_message.to_string();
+        
+        // Broadcast to all players
+        self.broadcast(hands_json).await;
+        
+        // Log for debugging
+        println!("Broadcasted hand information to all players");
+    }
+
+    /// Sends the current lobby information to the client.
+    pub async fn send_lobby_info(&self) {
+        // Get lobby information
+        let game_type = match self.game_type {
+            lobby::FIVE_CARD_DRAW => "5 Card Draw",
+            lobby::SEVEN_CARD_STUD => "7 Card Stud",
+            lobby::TEXAS_HOLD_EM => "Texas Hold'em",
+            _ => "Unknown"
+        };
+        
+        let player_count = self.get_player_count().await;
+        let max_players = match self.game_type {
+            lobby::FIVE_CARD_DRAW => 5,
+            lobby::SEVEN_CARD_STUD => 7,
+            lobby::TEXAS_HOLD_EM => 10,
+            _ => 10
+        };
+        
+        // Create JSON response
+        let lobby_info = serde_json::json!({
+            "lobbyInfo": {
+                "name": self.name,
+                "gameType": game_type,
+                "playerCount": player_count,
+                "maxPlayers": max_players
+            }
+        });
+        
+        let players = self.players.lock().await;
+        let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+        for tx in player_tx {
+            // Send lobby information to all players in the lobby
+            tx.send(Message::text(lobby_info.to_string())).unwrap();
+        }
+    }
+
+    /// Sends the current player list to the client with hand information.
+    pub async fn send_player_list(&self) {
+        // Build player list with hands
+        let player_info = self.get_player_names_and_status().await;
+        let mut players = Vec::new();
+        
+        // Get all players with their hands
+        {
+            let players_lock = self.players.lock().await;
+            for (name, ready) in player_info {
+                // Find the player to get their hand and state
+                if let Some(player) = players_lock.iter().find(|p| p.name == name) {
+                    players.push(serde_json::json!({
+                        "name": name,
+                        "ready": ready,
+                        "hand": player.hand,
+                        "state": player.state,
+                        "wallet": player.wallet,
+                        "chips": player.wallet // For compatibility with UI
+                    }));
+                } else {
+                    // Fallback if player not found
+                    players.push(serde_json::json!({
+                        "name": name,
+                        "ready": ready,
+                        "hand": Vec::<i32>::new(),
+                        "state": lobby::IN_LOBBY
+                    }));
+                }
+            }
+        }
+        
+        // Create JSON response
+        let player_list = serde_json::json!({
+            "players": players,
+        });
+
+        let players = self.players.lock().await;
+        let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+        for tx in player_tx {
+            // Send player list to all players in the lobby
+            tx.send(Message::text(player_list.to_string())).unwrap();
+        }
+        println!("players list with hands sent");
     }
 }
 

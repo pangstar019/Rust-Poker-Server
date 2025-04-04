@@ -527,8 +527,8 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
     println!("{} has joined lobby: {}", player_name, player_lobby.lock().await.name);
     
     // Send initial lobby information
-    send_lobby_info(&player_lobby).await;
-    send_player_list(&player_lobby).await;
+    player_lobby.lock().await.send_lobby_info().await;
+    player_lobby.lock().await.send_player_list().await;
     
     loop {
         let result = {
@@ -576,8 +576,8 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                             server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
                         }
                         server_lobby.lock().await.broadcast_player_count().await;
-                        send_lobby_info(&player_lobby).await;
-                        send_player_list(&player_lobby).await;
+                        player_lobby.lock().await.send_lobby_info().await;
+                        player_lobby.lock().await.send_player_list().await;
 
                         server_lobby.lock().await.remove_player(player_name.clone()).await;
                         server_lobby.lock().await.broadcast_player_count().await;
@@ -593,10 +593,8 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                         return "Disconnect".to_string();
                     }
                     Ok(ClientMessage::ShowLobbyInfo) => {
-                        // Send lobby information to client
-                        send_lobby_info(&player_lobby).await;
-                        // Update player list
-                        send_player_list(&player_lobby).await;
+                        player_lobby.lock().await.send_lobby_info().await;
+                        player_lobby.lock().await.send_player_list().await;
                     }
                     Ok(ClientMessage::Ready) => {
                         // READY UP - through the lobby
@@ -604,7 +602,7 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                             player_lobby.lock().await.check_ready(player_name.clone()).await;                    
                         
                         // Update all clients with the new player list
-                        send_player_list(&player_lobby).await;
+                        player_lobby.lock().await.send_player_list().await;
                         println!("for player {}, lobby state is {}", player_name, player_lobby.lock().await.game_state);
                     }
                     Ok(ClientMessage::ShowStats) => {
@@ -727,70 +725,3 @@ async fn join_as_spectator(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: 
         }
     }
 }
-
-/// Sends the current lobby information to the client.
-async fn send_lobby_info(player_lobby: &Arc<Mutex<Lobby>>) {
-    let lobby = player_lobby.lock().await;
-    
-    // Get lobby information
-    let game_type = match lobby.game_type {
-        lobby::FIVE_CARD_DRAW => "5 Card Draw",
-        lobby::SEVEN_CARD_STUD => "7 Card Stud",
-        lobby::TEXAS_HOLD_EM => "Texas Hold'em",
-        _ => "Unknown"
-    };
-    
-    let player_count = lobby.get_player_count().await;
-    let max_players = match lobby.game_type {
-        lobby::FIVE_CARD_DRAW => 5,
-        lobby::SEVEN_CARD_STUD => 7,
-        lobby::TEXAS_HOLD_EM => 10,
-        _ => 10
-    };
-    
-    // Create JSON response
-    let lobby_info = serde_json::json!({
-        "lobbyInfo": {
-            "name": lobby.name,
-            "gameType": game_type,
-            "playerCount": player_count,
-            "maxPlayers": max_players
-        }
-    });
-    
-    let players = lobby.players.lock().await;
-    let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-    for tx in player_tx {
-        // Send lobby information to all players in the lobby
-        tx.send(Message::text(lobby_info.to_string())).unwrap();
-    }
-}
-
-/// Sends the current player list to the client.
-async fn send_player_list(player_lobby: &Arc<Mutex<Lobby>>) {
-    let lobby = player_lobby.lock().await;
-    
-    // Build player list
-    let player_info = lobby.get_player_names_and_status().await;
-    let mut players = Vec::new();
-    for (name, ready) in player_info {
-        players.push(serde_json::json!({
-            "name": name,
-            "ready": ready
-        }));
-    }
-    
-    // Create JSON response
-    let player_list = serde_json::json!({
-        "players": players
-    });
-
-    let players = lobby.players.lock().await;
-    let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-    for tx in player_tx {
-        // Send player list to all players in the lobby
-        tx.send(Message::text(player_list.to_string())).unwrap();
-    }
-    println!("players list sent");
-}
-
