@@ -86,8 +86,7 @@
         .player-spot:nth-child(2), 
         .player-spot:nth-child(3), 
         .player-spot:nth-child(4), 
-        .player-spot:nth-child(5), 
-        .player-spot:nth-child(6) {
+        .player-spot:nth-child(5) {
             position: absolute;
         }
         
@@ -124,23 +123,60 @@
             margin-top: 5px;
         }
 
+        /* Add to the style section in five_card.html */
         .card {
+            display: inline-block;
             width: 35px;
             height: 50px;
-            background-color: white;
-            border-radius: 3px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: black;
+            margin: 0 2px;
+            background-color: #fff;
+            border: 1px solid #333;
+            border-radius: 4px;
+            text-align: center;
+            line-height: 50px;
             font-weight: bold;
+            font-size: 14px;
             box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+            position: relative;
         }
 
         .card.facedown {
             background: linear-gradient(135deg, #1e40af 25%, #1e3a8a 25%, #1e3a8a 50%, #1e40af 50%, #1e40af 75%, #1e3a8a 75%);
             background-size: 20px 20px;
             color: transparent;
+        }
+
+        .card-placeholder {
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 1px dashed rgba(255, 255, 255, 0.5);
+            color: transparent;
+        }
+
+        .red-card {
+            color: #cc0000;
+        }
+
+        .black-card {
+            color: #000;
+        }
+
+        .folded-indicator {
+            display: block;
+            color: #ff4444;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 14px;
+        }
+
+        .player-folded {
+            opacity: 0.7;
+        }
+
+        /* Add style for the player's own cards for better visibility */
+        .current-player .card:not(.facedown) {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            border: 2px solid #f8c471;
         }
 
         .game-status {
@@ -189,13 +225,49 @@
             if (event.data.type === "command") {
                 handleMessage(event.data);
             }
+
+            if (event.data.type === "wsMessage"){
+                handleServerMessage(event.data.message);
+            }
         });
+
+        function handleServerMessage(message) {
+            try {
+                const data = JSON.parse(message);
+                console.log("Server message received:", data);
+                
+                // Handle hands update from specific hand update messages
+                if (data.type === "handsUpdate") {
+                    updatePlayerHands(data.hands);
+                } 
+                // Handle player updates which now include hands
+                else if (data.type === "playerUpdate" && data.players) {
+                    // Format the data for updatePlayers
+                    updatePlayers(data.players);
+                    
+                    // Format hand data for updatePlayerHands if any players have hands
+                    const handsData = data.players
+                        .filter(player => player.hand && player.hand.length > 0)
+                        .map(player => ({
+                            playerName: player.name,
+                            hand: player.hand,
+                            state: player.state
+                        }));
+                        
+                    if (handsData.length > 0) {
+                        updatePlayerHands(handsData);
+                    }
+                }
+            } catch (error) {
+                console.error("Error processing server message:", error);
+            }
+        }
         
         function handleMessage(data) {
             if (data.command === "updatePlayers") {
                 updatePlayers(data.data.players);
             } else if (data.command === "startGame") {
-                startGame(data);
+                startGame(data.data);
             }
         }
         
@@ -246,14 +318,13 @@
             // Calculate the angle step based on total players
             const angleStep = 360 / totalPlayers;
             
-            // Create and position all players, starting with the current player at bottom (90 degrees in math terms)
+            // Create and position all players, starting with the current player at bottom
             for (let i = 0; i < totalPlayers; i++) {
                 // Calculate the player's position in the original array
                 const playerIndex = (currentPlayerIndex + i) % totalPlayers;
                 const player = players[playerIndex];
                 
-                // Calculate the angle, starting at 90 degrees (bottom) and moving clockwise
-                // Note: In CSS, 90° is bottom, 270° is top, 0° is right, 180° is left
+                // Calculate the angle, starting at 90 degrees (bottom)
                 const angle = (90 + (i * angleStep)) % 360;
                 
                 // Create the player spot
@@ -273,20 +344,20 @@
             const playerSpot = document.createElement('div');
             playerSpot.className = 'player-spot';
             
+            // Create HTML for player info
             playerSpot.innerHTML = `
                 <div class="player-name">${player.name}</div>
                 <div class="player-chips">$${player.chips || player.wallet || 1000}</div>
                 <div class="player-cards">
-                    <div class="card facedown">?</div>
-                    <div class="card facedown">?</div>
+                    <!-- Cards will be added dynamically only if player has cards -->
                 </div>
             `;
             
             // Position based on angle
             const radius = 40; // % of container
             const radians = angle * (Math.PI / 180);
-            const x = 50 + radius * Math.cos(radians); // center x + radius * cos(angle)
-            const y = 50 + radius * Math.sin(radians); // center y + radius * sin(angle)
+            const x = 50 + radius * Math.cos(radians);
+            const y = 50 + radius * Math.sin(radians);
             
             playerSpot.style.left = `${x}%`;
             playerSpot.style.top = `${y}%`;
@@ -298,6 +369,22 @@
                 playerSpot.style.left = '50%';
                 playerSpot.style.top = 'auto';
                 playerSpot.style.transform = 'translateX(-50%)';
+            }
+            
+            // Add default face down cards if this is not an empty hand update
+            const cardsContainer = playerSpot.querySelector('.player-cards');
+            
+            // Only add placeholder cards during the game
+            const gameIsActive = gameStatus.textContent !== 'Waiting for players...';
+            
+            if (gameIsActive && (!player.hand || player.hand.length === 0)) {
+                // Add placeholders for cards when in game but no cards received yet
+                for (let i = 0; i < 5; i++) {
+                    const card = document.createElement('div');
+                    card.className = 'card facedown';
+                    card.textContent = '?';
+                    cardsContainer.appendChild(card);
+                }
             }
             
             return playerSpot;
@@ -335,6 +422,120 @@
                 gameType: '5 Card Draw'
             }, '*');
         };
+
+        // Function to update player hands based on server data
+        function updatePlayerHands(hands) {
+            console.log("Updating player hands:", hands);
+            
+            if (!hands || !Array.isArray(hands) || hands.length === 0) {
+                console.log("No hand data to update");
+                return;
+            }
+            
+            // Get all player spots
+            const playerSpots = document.querySelectorAll('.player-spot');
+            
+            // Map player names to their DOM elements
+            const playerElements = {};
+            playerSpots.forEach(spot => {
+                const nameElement = spot.querySelector('.player-name');
+                if (nameElement) {
+                    playerElements[nameElement.textContent] = spot;
+                }
+            });
+            
+            // Update each player's cards
+            hands.forEach(playerHand => {
+                const playerName = playerHand.playerName;
+                const hand = playerHand.hand || [];
+                const state = playerHand.state;
+                
+                const playerElement = playerElements[playerName];
+                if (!playerElement) return;
+                
+                // Get the cards container for this player
+                const cardsContainer = playerElement.querySelector('.player-cards');
+                if (!cardsContainer) return;
+                
+                // Clear existing cards
+                cardsContainer.innerHTML = '';
+                
+                // If player folded, show folded state
+                if (state === 1) { // FOLDED = 1
+                    const foldedDiv = document.createElement('div');
+                    foldedDiv.className = 'folded-indicator';
+                    foldedDiv.textContent = 'FOLDED';
+                    cardsContainer.appendChild(foldedDiv);
+                    playerElement.classList.add('player-folded');
+                    return;
+                }
+                
+                // Remove folded class if it exists
+                playerElement.classList.remove('player-folded');
+                
+                // Skip if hand is empty - don't show any cards
+                if (hand.length === 0) {
+                    return;
+                }
+                
+                // Create and add cards
+                const maxCards = 5; // 5 Card Draw has 5 cards
+                const cardCount = Math.min(hand.length, maxCards);
+                
+                for (let i = 0; i < cardCount; i++) {
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    
+                    // If this is the current player, show the actual card
+                    // Otherwise keep it face down
+                    const storedPlayerName = localStorage.getItem('currentPlayerName');
+                    
+                    if (playerName === storedPlayerName) {
+                        card.textContent = cardToString(hand[i]);
+                        card.dataset.cardValue = hand[i];
+                        card.classList.add(getCardColor(hand[i]));
+                    } else {
+                        card.textContent = '?';
+                        card.classList.add('facedown');
+                    }
+                    
+                    cardsContainer.appendChild(card);
+                }
+                
+                // Fill remaining slots with empty placeholders if needed
+                for (let i = cardCount; i < maxCards; i++) {
+                    const emptyCard = document.createElement('div');
+                    emptyCard.className = 'card card-placeholder';
+                    cardsContainer.appendChild(emptyCard);
+                }
+            });
+        }
+
+        // Helper function to convert card value to string
+        function cardToString(cardValue) {
+            if (cardValue === undefined || cardValue === null) return '?';
+            
+            // Extract suit (0-3) and rank (0-12)
+            const suit = Math.floor(cardValue / 13);
+            const rank = cardValue % 13;
+            
+            // Rank symbols
+            const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+            
+            // Suit symbols
+            const suits = ['♠', '♥', '♦', '♣'];
+            
+            return ranks[rank] + suits[suit];
+        }
+
+        // Helper function to determine card color based on suit
+        function getCardColor(cardValue) {
+            if (cardValue === undefined || cardValue === null) return '';
+            
+            const suit = Math.floor(cardValue / 13);
+            // Hearts and diamonds are red, spades and clubs are black
+            return (suit === 1 || suit === 2) ? 'red-card' : 'black-card';
+        }
     </script>
 </body>
 </html>
