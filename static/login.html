@@ -62,11 +62,14 @@
 
       function login() {
         const username = document.getElementById("username").value;
+        localStorage.setItem('currentPlayerName', username);
+
         sendToServer(JSON.stringify({ action: "Login", data: { username } }));
       }
 
       function registerUser() {
         const username = document.getElementById("username").value;
+        localStorage.setItem('currentPlayerName', username);
         sendToServer(
           JSON.stringify({ action: "Register", data: { username } })
         );
