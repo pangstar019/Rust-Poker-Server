@@ -443,7 +443,7 @@
         // Set up periodic refresh
         setInterval(() => {
           updateInput();
-        }, 100);
+        }, 1000);
       };
 
       // Add this function to load the appropriate game iframe
@@ -506,7 +506,8 @@
           }
 
           if (response.redirect) {
-            window.location.href = response.redirect;
+            // Navigate using parent frame
+            window.parent.navigate(response.redirect);
           }
 
           // Handle player list

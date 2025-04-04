@@ -214,7 +214,8 @@
             playerCountDiv.innerText = `Players Online: ${response.playerCount}`;
           }
           if (response.redirect) {
-            window.location.href = response.redirect;
+            // Navigate using parent frame
+            window.parent.navigate(response.redirect);
           }
           if (response.lobbies) {
             displayLobbies(response.lobbies);
