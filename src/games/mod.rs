@@ -264,106 +264,7 @@ pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_mes
         }
         _ => {}
     }
-    let mut players = lobby.players.lock().await;
-    if players.len() == 1 {
-        // Only one player left, move on
-        return;
-    }
     
-    let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-    let player_names: Vec<String> = players.iter().map(|p| p.name.clone()).collect();
-    
-    // Get current player index
-    let mut current_player_index = lobby.first_betting_player;
-    let mut current_lobby_bet = 0;
-    let mut players_remaining = lobby.current_player_count;
-    let mut folded_count = 0;
-    let mut all_folded = false;
-    
-    // Process each player's betting turn
-    while players_remaining > 0 {
-        let current_player_name = player_names[current_player_index as usize].clone();
-        
-        // Get current player state without keeping a lock
-        let player_state = {
-            let current_player = players.iter().find(|p| p.name == current_player_name);
-            if let Some(player) = current_player {
-                player.state
-            } else {
-                FOLDED // Player not found, treat as folded
-            }
-        };
-        
-        // Skip folded or all-in players
-        if player_state == FOLDED || player_state == ALL_IN {
-            current_player_index = (current_player_index + 1) % lobby.current_player_count;
-            players_remaining -= 1;
-            continue;
-        }
-        
-        // Send betting options to the current player
-        let player_tx = players.iter().find(|p| p.name == current_player_name).map(|p| p.tx.clone());
-        if let Some(tx) = player_tx {
-            let message = format!(
-                "Choose an option:\n1. Check\n2. Raise\n3. Call\n4. Fold\n5. All-in\n6. Display Hand\n\nYour amount to call: {}\nCurrent Pot: {}\nCurrent Wallet: {}",
-                current_lobby_bet - {
-                    // Get player's current bet
-                    players.iter().find(|p| p.name == current_player_name)
-                           .map(|p| p.current_bet)
-                           .unwrap_or(0)
-                }, 
-                lobby.pot, 
-                {
-                    // Get player's wallet
-                    players.iter().find(|p| p.name == current_player_name)
-                           .map(|p| p.wallet)
-                           .unwrap_or(0)
-                }
-            );
-            let _ = tx.send(Message::text(message));
-        }
-        
-        // Release players lock while waiting for input
-        drop(players);
-        
-        // Process player input
-        let choice = lobby.process_player_input(&current_player_name).await;
-        
-        // Re-acquire players lock
-        players = lobby.players.lock().await;
-        
-        // Get mutable reference to current player
-        let current_player = players.iter_mut().find(|p| p.name == current_player_name);
-        
-        if let Some(player) = current_player {
-            // Process player's choice
-            match choice.as_str() {
-                "1" => { // Check
-                    if current_lobby_bet == 0 {
-                        player.state = CHECKED;
-                        // Send broadcast that player checked
-                        lobby.lobby_wide_send(
-                            players_tx.clone(),
-                            format!("{} has checked.", player.name),
-                        ).await;
-                        players_remaining -= 1;
-                        break;
-                    } else {
-                        player.tx.send(Message::text(
-                            "Invalid move: You can't check, there's a bet to call.",
-                        )).ok();
-                    }
-                },
-                // Add other betting options here...
-                _ => {
-                    player.tx.send(Message::text("Invalid action, try again.")).ok();
-                }
-            }
-        }
-        
-        // Move to next player
-        current_player_index = (current_player_index + 1) % lobby.current_player_count;
-    }
 }
 
 /// Handles the drawing round for players in a poker game.
@@ -1261,6 +1162,10 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                                 if betting_round(&mut player, lobby_guard.current_max_bet.clone(), valid_message).await {
                                                                     // if returns true, we update the lobby with the new information from the player clone
                                                                     // update based off the players state now
+                                                                    let player_state = player.state.clone();
+                                                                    // match player_state {
+
+                                                                    // }
                                                                 }
                                                             } else {
                                                                 println!("Invalid client message received: {:?}", valid_message);
