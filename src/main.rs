@@ -137,7 +137,7 @@ async fn main() -> std::io::Result<()> {
     let five_card = warp::path("five_card")
         .and(warp::fs::dir("../static/five_card.html"));
 
-    let seven_card = warp::path("sevn_card")
+    let seven_card = warp::path("seven_card")
         .and(warp::fs::dir("../static/seven_card.html"));
 
     let texas_hold_em = warp::path("texas_holdem")

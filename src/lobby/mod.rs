@@ -9,28 +9,35 @@
 //! The game state machine is driven by player input, which is received via WebSocket messages. The game state machine processes the input and sends messages back to the players. 
 use super::*;
 use crate::Deck;
-use futures_util::future::{ready, Join};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex};
-use warp::{filters::ws::WebSocket, ws::Message};
+use warp:: ws::Message;
 use games::{get_best_hand, get_hand_type};
 
-// use warp::filters::ws::SplitStream;
 
 // Lobby attribute definitions
 pub const MAX_PLAYER_COUNT: i32 = 5;
-const EMPTY: i32 = -1;
+pub const EMPTY: i32 = -1;
 pub const JOINABLE: i32 = 0;
 pub const START_OF_ROUND: i32 = 1;
 pub const ANTE: i32 = 2;
+pub const SMALL_AND_BIG_BLIND: i32 = 19;
+pub const BIG_BLIND: i32 = 20;
+pub const DEAL_COMMUNITY_CARDS: i32 = 21;
 pub const DEAL_CARDS: i32 = 3;
-pub const FIRST_BETTING_ROUND: i32 = 4;
+pub const FIRST_BETTING_ROUND: i32 = 14;
+pub const SECOND_BETTING_ROUND: i32 = 15;
+pub const BETTING_ROUND: i32 = 16;
 pub const DRAW: i32 = 5;
-pub const SECOND_BETTING_ROUND: i32 = 6;
+pub const BRING_IN: i32 = 50;
+
 pub const SHOWDOWN: i32 = 7;
 pub const END_OF_ROUND: i32 = 8;
-const UPDATE_DB: i32 = 9;
+pub const UPDATE_DB: i32 = 9;
+pub const TURN_ROUND: i32 = 10;
+pub const FLOP_ROUND: i32 = 11;
+pub const RIVER_ROUND: i32 = 12;
 
 // Method return defintions
 pub const SUCCESS: i32 = 100;
@@ -69,6 +76,8 @@ pub struct Lobby {
     pub current_player_index: i32,
     pub turns_remaining: i32,
     pub spectators: Arc<Mutex<Vec<Player>>>,
+    pub deal_card_counter: i32,
+    pub betting_round_counter: i32,
 }
 
 impl Lobby {
@@ -108,6 +117,9 @@ impl Lobby {
             current_player_index: 0,
             turns_remaining: 0,
             spectators: Arc::new(Mutex::new(Vec::new())),
+            deal_card_counter: 0,
+            betting_round_counter: 0,
+
         }
     }
 
@@ -649,6 +661,7 @@ impl Lobby {
         }
         println!("players list with hands sent");
     }
+
 }
 
 
