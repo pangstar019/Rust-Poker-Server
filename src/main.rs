@@ -87,11 +87,12 @@ enum ClientMessage {
     ShowHand,
     // Add additional actions as needed.
     BettingRound,
+    
     Check,
     Call,
     Raise { amount: i32 },
     Fold,
-    All_in,
+    AllIn,
 
 }
 
