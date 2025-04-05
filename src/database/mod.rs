@@ -66,14 +66,47 @@ impl Database {
     /// * `Ok(Some(String))` - The player ID if the user exists.
     /// * `Ok(None)` - If no such user exists.
     /// * `Err(sqlx::Error)` - If a database error occurs.
-    pub async fn login_player(&self, name: &str) -> Result<Option<String>, sqlx::Error> {
-        let row = sqlx::query("SELECT id FROM players WHERE name = ?1")
-            .bind(name)
+    pub async fn login_player(&self, username: &str) -> Result<Option<Uuid>, sqlx::Error> {
+        // First check if player exists and is not already logged in
+        let row = sqlx::query("SELECT id, logged_in FROM players WHERE name = ?1")
+            .bind(username)
             .fetch_optional(&*self.pool)
             .await?;
-        Ok(row.map(|r| r.get(0)))
+
+        match row {
+            Some(row) => {
+                let logged_in: bool = row.try_get("logged_in")?;
+                
+                if logged_in {
+                    // Player is already logged in
+                    Ok(None) // Return None to indicate login failure
+                } else {
+                    // Update logged_in status to true
+                    sqlx::query("UPDATE players SET logged_in = TRUE WHERE name = ?1")
+                        .bind(username)
+                        .execute(&*self.pool)
+                        .await?;
+                    
+                    // Parse UUID from string
+                    let id_str: String = row.try_get("id")?;
+                    let id = Uuid::parse_str(&id_str).unwrap_or_default();
+                    Ok(Some(id))
+                }
+            }
+            None => Ok(None), // Player not found
+        }
     }
 
+    /// Add a function to logout a player
+    /// Add a function to logout a player
+    pub async fn logout_player(&self, username: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE players SET logged_in = FALSE WHERE name = ?1")
+            .bind(username)
+            .execute(&*self.pool)
+            .await?;
+        
+        Ok(())
+    }
     /// Retrieves a player's statistics (games played, games won, and wallet balance) by username.
     /// 
     /// # Arguments
@@ -148,7 +181,8 @@ mod tests {
                 name TEXT NOT NULL UNIQUE,
                 games_played INTEGER DEFAULT 0,
                 games_won INTEGER DEFAULT 0,
-                wallet INTEGER DEFAULT 1000
+                wallet INTEGER DEFAULT 1000,
+                logged_in BOOLEAN DEFAULT FALSE
             )"
         )
         .execute(&pool)

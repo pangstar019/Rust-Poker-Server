@@ -272,8 +272,11 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
     if let Some(player) = logged_in_player {
         if player.state == lobby::IN_SERVER {
             println!("Player logged in successfully.");
-            handle_server_lobby(player, server_lobby, db).await;
+            handle_server_lobby(player.clone(), server_lobby, db.clone()).await;
         }
+        
+        // Logout player when they disconnect
+        let _ = db.logout_player(&player.name).await;
     }
     
     println!("Connection closed");
@@ -309,7 +312,8 @@ async fn handle_login_phase(mut player: Player, db: Arc<Database>, server_lobby:
                             
                             return Some(player.clone());
                         } else {
-                            tx.send(Message::text(r#"{"message": "Login failed. Please try again."}"#)).unwrap();
+                            // Login failed, could be because user is already logged in
+                            tx.send(Message::text(r#"{"message": "Login failed. User may already be logged in or doesn't exist."}"#)).unwrap();
                         }
                     }
                     Ok(ClientMessage::Register { username }) => {
@@ -562,6 +566,7 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                     }
                     Ok(ClientMessage::Disconnect) => {
                         // Player disconnected entirely
+                        let _ = db.logout_player(&player_name).await;
                         let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
                         if lobby_status == lobby::GAME_LOBBY_EMPTY {
                             server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
