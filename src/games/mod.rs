@@ -1090,7 +1090,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         // lobby.broadcast(format!("{}'s turn to act!", player.name)).await;
                                         println!("player {} state {}", player.name, player.state);
                                         // send the JSON message to update the UI for the player
-
+                                        loop {
                                             let result = {
                                                 // Get next message from the player's websocket
                                                 let mut rx = player.rx.lock().await;
@@ -1099,39 +1099,46 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                     None => continue,
                                                 }
                                             };
+
                                             if let Ok(msg) = result {
                                                 if let Ok(text) = msg.to_str() {
                                                     // Parse the incoming JSON message
                                                     let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
-                                                    
-                                                    tx.send(Message::text(format!(r#"{{"message": "got their response"}}"#))).unwrap();
-                                                    let lobby_name = player_lobby.lock().await.name.clone();
+                                                    println!("reached");
                                     
                                                     match client_msg {
                                                         Ok(ClientMessage::Disconnect) => {
-                                                            // Player disconnected entirely
-                                                            let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
-                                                            if lobby_status == lobby::GAME_LOBBY_EMPTY {
-                                                                lobby_guard.remove_lobby(lobby_name.clone()).await;
-                                                            } else {
-                                                                lobby_guard.update_lobby_names_status(lobby_name).await;
-                                                            }
-                                                            lobby_guard.broadcast_player_count().await;
-                                                            lobby_guard.send_lobby_info().await;
-                                                            lobby_guard.send_player_list().await;
+                                                            /*
+                                                            Add current player into to-be-rmoved list and keep their player reference active within the players vector
+                                                            
+                                                            
+                                                             */
+
+
+                                                            // // Player disconnected entirely
+                                                            // let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
+                                                            // if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                                                            //     lobby_guard.remove_lobby(lobby_name.clone()).await;
+                                                            // } else {
+                                                            //     lobby_guard.update_lobby_names_status(lobby_name).await;
+                                                            // }
+                                                            // lobby_guard.broadcast_player_count().await;
+                                                            // lobby_guard.send_lobby_info().await;
+                                                            // lobby_guard.send_player_list().await;
                                     
-                                                            lobby_guard.remove_player(player_name.clone()).await;
-                                                            lobby_guard.broadcast_player_count().await;
+                                                            // lobby_guard.remove_player(player_name.clone()).await;
+                                                            // lobby_guard.broadcast_player_count().await;
                                                             
-                                                            // Update player stats from database
-                                                            if let Err(e) = db.update_player_stats(&player).await {
-                                                                eprintln!("Failed to update player stats: {}", e);
-                                                            }
+                                                            // // Update player stats from database
+                                                            // if let Err(e) = db.update_player_stats(&player).await {
+                                                            //     eprintln!("Failed to update player stats: {}", e);
+                                                            // }
                                                             
-                                                            return "Disconnect".to_string();
+                                                            // return "Disconnect".to_string();
                                                         }
                                                         _ => {
                                                             let prev_player_bet = player.current_bet.clone();
+                                                            println!("player {} previous bet: {}", player.name, prev_player_bet);
                                                             // pass in the players input and validate it (check, call, raise, fold, all in)
                                                             if let Ok(valid_message) = client_msg {
                                                                 tx.send(Message::text(format!(r#"{{"message": "checking their response"}}"#))).unwrap();
@@ -1201,7 +1208,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                     }
                                                 }
                                             }
-                                            
                                         }
                                     }
                                 }
