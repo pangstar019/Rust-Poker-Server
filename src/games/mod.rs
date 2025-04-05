@@ -51,8 +51,8 @@
 //! The module is designed to be used with a WebSocket server and uses async/await for concurrency.
 
 use super::*;
-use crate::lobby::Lobby;
-use crate::player::Player;
+use crate::lobby::{self, Lobby};
+use crate::player::{self, Player};
 use std::sync::Arc;
 use tokio::sync::{mpsc::UnboundedSender, Mutex};
 use warp:: ws::Message;
@@ -178,63 +178,83 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
 /// 
 /// This function does not return a value. It updates the players' wallets and game statistics.
 /// It also handles the display of hands to active players.
-pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_message: ClientMessage) -> bool {
-    println!("{}: {}", player.name, player.state);
-    match client_message {
+pub async fn betting_round(player: &mut Player, lobby: &mut tokio::sync::MutexGuard<'_, lobby::Lobby,>, action: ClientMessage) -> (bool, bool) {
+    let mut valid_action = true;
+    let mut reset = false;
+    let player_prev_bet = player.current_bet;
+    let current_max_bet = lobby.current_max_bet;
+    match action {
         ClientMessage::Check => {
-            player.tx.send(Message::text(r#"{"message": "get checked"}"#)).unwrap();
+            println!("{}: check command received", player.name);
             // only check when there is no bet to call
-            if player.current_bet == current_max_bet && current_max_bet == 0 {
+            if player.current_bet == lobby.current_max_bet && lobby.current_max_bet == 0 {
+                player.tx.send(Message::text(r#"{"message": "Checked"}"#)).unwrap();
                 player.state = player::CHECKED;
-                return true;
+                return (valid_action, reset);
             } else {
-                return false; // Invalid move: Can't check if there's a bet to call
+                valid_action = false;
+                return (valid_action, reset);
             }
         }
         ClientMessage::Fold => {
+            println!("{}: fold command received", player.name);
             player.state = player::FOLDED;
-            return true;
+            return (valid_action, reset);
         }
         ClientMessage::Call => {
-            if player.wallet >= current_max_bet - player.current_bet {
-                player.wallet -= current_max_bet - player.current_bet;
+            println!("{}: call command received", player.name);
+            let call_amount = current_max_bet - player_prev_bet;
+            if player.wallet >= call_amount {
+                player.wallet -= call_amount;
+                lobby.pot += call_amount;
                 player.current_bet = current_max_bet;
-                player.state = player::CALLED;
                 if player.wallet == 0 {
                     player.state = player::ALL_IN;
+                } else {
+                    player.state = player::CALLED;
                 }
-                return true;
+                return (valid_action, reset);
             } else {
-                return false;
+                valid_action = false;
+                return (valid_action,reset);
             }
         }
         ClientMessage::Raise { amount } => {
+            println!("{}: raise command received", player.name);
             if amount > 0 && amount <= player.wallet {
-                if amount > current_max_bet - player.current_bet {
-                    // println!("{}: {} raised to {}", player.name, player.state, amount);
-                    player.tx.send(Message::text(r#"{"message": "get raised"}"#)).unwrap();
+                if amount > current_max_bet - player_prev_bet {
                     player.state = player::RAISED;
                     player.wallet -= amount;
+                    lobby.pot += amount;
                     player.current_bet += amount;
+                    lobby.current_max_bet = player.current_bet;
+                    reset = true;
                     if player.wallet == 0 {
                         player.state = player::ALL_IN;
                     }
-                    return true;
-                } else {
-                    return false;
+                    return (valid_action, reset);
                 }
-            } else {
-                return false;
             }
+            valid_action = false;
+            return (valid_action, reset);
         }
         ClientMessage::AllIn => {
+            println!("{}: all in command received", player.name);
             player.state = player::ALL_IN;
             let all_in_amount = player.wallet;
             player.wallet = 0;
             player.current_bet += all_in_amount;
-            return true;
+            lobby.pot += all_in_amount;
+            if player.current_bet > current_max_bet{
+                lobby.current_max_bet = player.current_bet;
+                reset = true;
+            }
+            return (valid_action, reset);
         }
-        _ => false
+        _ => {
+            valid_action = false;
+            return (valid_action, reset);
+        }
     }
     
 }
@@ -829,7 +849,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
     
     loop {
         match player.state {
-            IN_LOBBY => {
+            player::IN_LOBBY => {
                 loop {
                     let result = {
                         // Get next message from the player's websocket
@@ -960,25 +980,26 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                     if let Ok(mut lobby_guard) = player_lobby.try_lock(){
                         if lobby_guard.current_player_turn == player_name{
                             match  lobby_guard.game_state {
-                                JOINABLE => {
+                                lobby::JOINABLE => {
                                     continue;
                                 }
-                                START_OF_ROUND => {
+                                lobby::START_OF_ROUND => {
                                     lobby_guard.game_state = lobby::ANTE;
                                     
                                     // Initialize turns counter for tracking player actions
                                     lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                     lobby_guard.send_lobby_game_info().await;
                                 }
-                                ANTE => {
+                                lobby::ANTE => {
+                                    println!("ante round current player: {}", player_name);
                                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                                    tx.send(Message::text(r#"{"message": "ANTE"}"#)).unwrap();
+                                    tx.send(Message::text(r#"{"message": "Ante Round"}"#)).unwrap();
                                     println!("ante round message sent to player: {}", player_name);
                                     if player.wallet > 10 {
                                         // Deduct ante from player wallet and add to pot
                                         player.wallet -= 10;
                                         player.games_played += 1;
-                                        lobby_guard.update_player_stats(&player_name, player.wallet, player.games_played, player.games_won).await;
+                                        lobby_guard.update_player_reference(&player).await;
                                         lobby_guard.pot += 10;
                                     } else {
                                         // Not enough money, mark as folded
@@ -998,42 +1019,55 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         tx.send(Message::text(stats_json.to_string())).unwrap();
                                     }
                                     if lobby_guard.turns_remaining == 0{
-                                        lobby_guard.game_state = DEAL_CARDS;
+                                        if lobby_guard.check_end_game().await {
+                                            // game over if all or all-but-one players are folded or disconnected
+                                            lobby_guard.game_state = lobby::SHOWDOWN;
+                                        } else {
+                                            // carry on if multiple players are still in the game
+                                            lobby_guard.game_state = lobby::DEAL_CARDS;
+                                        }
                                         lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                         lobby_guard.get_next_player(true).await;
-                                        println!("ante round complete, moving to deal cards");
+                                        println!("ante round complete");
                                     } else {
                                         lobby_guard.get_next_player(false).await;
                                     }
                                     lobby_guard.send_lobby_game_info().await;
                                 }
-                                DEAL_CARDS => {
+                                lobby::DEAL_CARDS => {
+                                    println!("deal round current player: {}", player_name);
+                                    tx.send(Message::text(r#"{"message": "Dealing Cards....."}"#)).unwrap();
                                     // Deal 5 cards to each active player
-                                    if player.hand.len() < 5 {
-                                        player.hand.push(lobby_guard.deck.deal());
-                                        lobby_guard.update_player_hand(&player_name, player.clone().hand).await;
-                                        lobby_guard.get_next_player(false).await;
-                                    } else {
-                                        lobby_guard.turns_remaining -= 1;
-                                        if lobby_guard.turns_remaining == 0{
-                                            lobby_guard.game_state = FIRST_BETTING_ROUND;
-                                            lobby_guard.turns_remaining = lobby_guard.current_player_count;
-                                            lobby_guard.get_next_player(true).await;
-                                            lobby_guard.send_player_list().await;
-                                            lobby_guard.send_lobby_game_info().await;
-                                            println!("all cards dealt, moving to first betting round");
+                                    if player.state != player::FOLDED {
+                                        if player.hand.len() < 5 {
+                                            player.hand.push(lobby_guard.deck.deal());
+                                            lobby_guard.update_player_hand(&player_name, player.clone().hand).await;
                                         } else {
-                                            lobby_guard.get_next_player(false).await;
+                                            lobby_guard.turns_remaining -= 1;
+                                            if lobby_guard.turns_remaining == 0 {
+                                                if lobby_guard.check_end_game().await {
+                                                    // game over if all or all-but-one players are folded or disconnected
+                                                    lobby_guard.game_state = lobby::SHOWDOWN;
+                                                } else {
+                                                    // carry on if multiple players are still in the game
+                                                    lobby_guard.game_state = lobby::FIRST_BETTING_ROUND;
+                                                }
+                                                lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                                lobby_guard.get_next_player(true).await;
+                                                lobby_guard.send_player_list().await;
+                                                lobby_guard.send_lobby_game_info().await;
+                                                println!("all cards dealt, moving to first betting round with player turn: {}", lobby_guard.current_player_turn);
+                                                continue;
+                                            }
                                         }
                                     }
+                                    lobby_guard.get_next_player(false).await;
                                 }
-                                
-                                FIRST_BETTING_ROUND | SECOND_BETTING_ROUND => {
-                                    lobby_guard.broadcast("------ betting round!------".to_string()).await;
+                                lobby::FIRST_BETTING_ROUND | lobby::SECOND_BETTING_ROUND => {
+                                    println!("betting round current player {}", player_name);
+                                    tx.send(Message::text(r#"{"message": "Betting Round"}"#)).unwrap();
+                                    // skip the player if they are folded or all in
                                     if player.state != player::FOLDED && player.state != player::ALL_IN {
-                                        // lobby.broadcast(format!("{}'s turn to act!", player.name)).await;
-                                        // println!("player {} state {}", player.name, player.state);
-                                        // send the JSON message to update the UI for the player
                                         loop {
                                             let result = {
                                                 // Get next message from the player's websocket
@@ -1048,7 +1082,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                 if let Ok(text) = msg.to_str() {
                                                     // Parse the incoming JSON message
                                                     let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
-                                    
                                                     match client_msg {
                                                         Ok(ClientMessage::Disconnect) => {
                                                             /*
@@ -1080,81 +1113,17 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                             // return "Disconnect".to_string();
                                                         }
                                                         _ => {
-                                                            let prev_player_bet = player.current_bet.clone();
                                                             // pass in the players input and validate it (check, call, raise, fold, all in)
-                                                            if let Ok(valid_message) = client_msg {
-                                                                if betting_round(&mut player, lobby_guard.current_max_bet.clone(), valid_message).await {
+                                                            if let Ok(action) = client_msg {
+                                                                let (valid_action, reset) = betting_round(&mut player, &mut lobby_guard, action).await;
+                                                                if valid_action {
+                                                                    println!("valid action");
                                                                     // update the server lobby player reference with updated clone data
-                                                                    // only values that are changed
-                                                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].current_bet = player.current_bet;
-                                                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].state = player.state;
-                                                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].wallet = player.wallet;
-                                                                    
-                                                                    let player_state = player.state.clone();
-                                                                    match player_state {
-                                                                        player::CHECKED | player::CALLED | player::FOLDED => {
-                                                                            lobby_guard.turns_remaining -= 1;
-                                                                            if player_state == player::CALLED{
-                                                                                lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                            }
-                                                                        }
-                                                                        player::ALL_IN => {
-                                                                            // if they went all in, did it raise the max bet
-                                                                            if player.current_bet > lobby_guard.current_max_bet {
-                                                                                lobby_guard.current_max_bet = player.current_bet.clone();
-                                                                                lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
-                                                                            } else {
-                                                                                lobby_guard.turns_remaining -= 1;
-                                                                            }
-                                                                            lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                            lobby_guard.get_next_player(false).await; 
-                                                                            lobby_guard.send_lobby_game_info().await;
-                                                                            lobby_guard.send_player_list().await;     
-                                                                            break;  
-                                                                        }
-                                                                        player::RAISED  => {
-                                                                            println!("REACCCHEDDD");
-                                                                            lobby_guard.current_max_bet = player.current_bet.clone();
-                                                                            lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                            
-                                                                            // reset the turns_remaining counter
-                                                                            lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
-                                                                            lobby_guard.get_next_player(false).await;
-                                                                            
-                                                                            lobby_guard.send_lobby_game_info().await;
-                                                                            lobby_guard.send_player_list().await;
-                                                                            break;
-                                                                        }
-                                                                        _ => {
-
-                                                                        }
-                                                                    }
-                                                                    // move to the next player and update the game state accordingly
-                                                                    if lobby_guard.turns_remaining == 0 {
-                                                                        if lobby_guard.game_state == FIRST_BETTING_ROUND {
-                                                                            lobby_guard.game_state = DRAW;
-                                                                        } else if lobby_guard.game_state == SECOND_BETTING_ROUND {
-                                                                            lobby_guard.game_state = SHOWDOWN;
-                                                                        }
-                                                                        lobby_guard.get_next_player(true).await;
-                                                                        lobby_guard.send_lobby_game_info().await;
-                                                                        lobby_guard.send_player_list().await;
-                                                                    } else {
-                                                                        lobby_guard.get_next_player(false).await;
-                                                                        lobby_guard.send_lobby_game_info().await;
-                                                                        lobby_guard.send_player_list().await;
-                                                                    }
-
-                                                                    // check if all but one player folded
-                                                                    let mut folded_count = 0;
-                                                                    for player in lobby_guard.players.lock().await.iter() {
-                                                                        if player.state == player::FOLDED {
-                                                                            folded_count += 1;
-                                                                        }
-                                                                    }
-                                                                    if folded_count == lobby_guard.current_player_count - 1 {
-                                                                        // if all but one player folded, end the game
-                                                                        lobby_guard.game_state = SHOWDOWN;
+                                                                    lobby_guard.update_player_reference(&player).await;
+                                                                    if reset {
+                                                                        println!("reseting turns remaining");
+                                                                        // reset the turns_remaining counter if the player raised
+                                                                        lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                                                     }
                                                                     break;
                                                                 }
@@ -1167,9 +1136,34 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                             }
                                         }
                                     }
+                                    lobby_guard.turns_remaining -= 1;
+                                    println!("player {} finish turn", player_name);
+                                    if lobby_guard.check_end_game().await {
+                                        lobby_guard.clear_betting().await;
+                                        lobby_guard.game_state = lobby::SHOWDOWN;
+                                    } else {
+                                        if lobby_guard.turns_remaining == 0 {
+                                            if lobby_guard.game_state == lobby::FIRST_BETTING_ROUND {
+                                                lobby_guard.game_state = lobby::DRAW;
+                                            } else if lobby_guard.game_state == lobby::SECOND_BETTING_ROUND {
+                                                lobby_guard.game_state = lobby::SHOWDOWN;
+                                            }
+                                            lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                            lobby_guard.clear_betting().await;
+                                            lobby_guard.get_next_player(true).await;
+                                            println!("betting round finished, next player turn: {}", lobby_guard.current_player_turn);
+                                        } else {
+                                            lobby_guard.get_next_player(false).await;
+                                            println!("next player turn: {}", lobby_guard.current_player_turn);
+                                        }
+                                    }
+                                    lobby_guard.send_lobby_game_info().await;
+                                    lobby_guard.send_player_list().await;
+                                    
                                 }
-                                DRAW => {
-                                    lobby_guard.broadcast("------Drawing round!------".to_string()).await;
+                                lobby::DRAW => {
+                                    tx.send(Message::text(r#"{"message": "Drawing Round"}"#)).unwrap();
+                                    player.current_bet = 0; // reset attribute from betting round
                                     
                                     // Check if current player isn't folded
                                     if player.state != player::FOLDED && player.state != player::ALL_IN {
@@ -1227,7 +1221,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                                 lobby_guard.turns_remaining -= 1;
                                                                 if lobby_guard.turns_remaining == 0 {
                                                                     // All players have completed their draws
-                                                                    lobby_guard.game_state = SHOWDOWN;
+                                                                    lobby_guard.game_state = lobby::SECOND_BETTING_ROUND;
                                                                     lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                                                     lobby_guard.get_next_player(true).await;
                                                                     lobby_guard.send_lobby_game_info().await;
@@ -1263,55 +1257,42 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         lobby_guard.send_player_list().await;
                                     }
                                 }
-                                // SECOND_BETTING_ROUND => {
-                                //     lobby.broadcast("Second betting round!".to_string()).await;
-                                //     betting_round(lobby).await;
-                                //     lobby.broadcast(format!("Second betting round complete!\nCurrent pot: {}", lobby.pot)).await;
-                                //     lobby.game_state = SHOWDOWN;
-                                // }
-                                SHOWDOWN => {
-                                    lobby_guard.broadcast("------Showdown Round!------".to_string()).await;
-    
-                                    // Display all players' hands to everyone
-                                    let active_players = {
+                                lobby::SHOWDOWN => {
+                                    tx.send(Message::text(r#"{"message": "Showdown Round"}"#)).unwrap();
+                                    {
+                                        // Display all players' hands to everyone
                                         let players = lobby_guard.players.lock().await;
-                                        players.iter()
-                                            .filter(|p| p.state != player::FOLDED)
-                                            .map(|p| p.clone())
-                                            .collect::<Vec<Player>>()
-                                    };
-                                    
-                                    // Construct data for all active hands
-                                    let mut all_hands_data = Vec::new();
-                                    for player in active_players.iter() {
-                                        let hand_type = get_hand_type(&player.hand);
-                                        let hand_name = hand_type_to_string(hand_type.0);
                                         
-                                        all_hands_data.push(serde_json::json!({
-                                            "playerName": player.name,
-                                            "hand": player.hand,
-                                            "handType": hand_name,
-                                            "handRank": hand_type
-                                        }));
+                                        // Construct data for all active hands
+                                        let mut all_hands_data = Vec::new();
+                                        for player in players.iter() {
+                                            let state = player.state.clone();
+                                            
+                                            all_hands_data.push(serde_json::json!({
+                                                "playerName": player.name,
+                                                "state": state,
+                                                "hand": player.hand,
+                                            }));
+                                        }
+                                        // Send all hands data to all players
+                                        let all_hands_json = serde_json::json!({
+                                            "type": "showdownHands",
+                                            "hands": all_hands_data
+                                        });
+                                        lobby_guard.broadcast(all_hands_json.to_string()).await;
                                     }
-                                    
-                                    // Send all hands data to all players
-                                    let all_hands_json = serde_json::json!({
-                                        "type": "showdownHands",
-                                        "hands": all_hands_data
-                                    });
-                                    lobby_guard.broadcast(all_hands_json.to_string()).await;
                                     
                                     // Determine winner(s) and award pot
                                     lobby_guard.showdown().await;
                                     
                                     // Wait briefly before ending the round
                                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                                    
-                                    lobby_guard.game_state = UPDATE_DB;
+                                    lobby_guard.game_state = lobby::UPDATE_DB;
                                 }
-                                UPDATE_DB => {
+                                lobby::UPDATE_DB => {
                                     // Update player stats and wallets in database
+                                    tx.send(Message::text(r#"{"message": "Game Ended"}"#)).unwrap();
+
                                     let player_states = lobby_guard.get_player_names_and_status().await;
                                     for (player_name, _) in player_states {
                                         // Reset player ready status

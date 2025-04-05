@@ -420,6 +420,25 @@ impl Lobby {
         println!("lobby {} set up for startin game.", self.name);
     }
 
+    pub async fn check_end_game(&self) -> bool {
+        let mut active_count = 0;
+        let players = self.players.lock().await;
+        for player in players.iter() {
+            if player.state != player::FOLDED {
+                active_count += 1;
+            }
+        }
+        return active_count == 0 || active_count == 1;
+    }
+
+    pub async fn clear_betting(&mut self) {
+        self.current_max_bet = 0;
+        let mut players = self.players.lock().await;
+        for player in players.iter_mut() {
+            player.current_bet = 0;
+        }
+    }
+
     /// Handles the showdown phase of the game, where players reveal their hands and determine the winner.
     /// The function evaluates the hands of all players and determines the winner(s) based on the hand rankings.
     /// It also updates the players' wallets and game statistics.
@@ -521,12 +540,16 @@ impl Lobby {
         false
     }
 
-    pub async fn update_player_stats(&self, player_name: &str, wallet: i32, games_played: i32, games_won: i32) {
+    pub async fn update_player_reference(&self, player_ref: &Player) {
         let mut players = self.players.lock().await;
-        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
-            player.wallet = wallet;
-            player.games_played = games_played;
-            player.games_won = games_won;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_ref.name) {
+            player.hand = player_ref.hand.clone();
+            player.wallet = player_ref.wallet;
+            player.state = player_ref.state;
+            player.current_bet = player_ref.current_bet;
+            player.ready = player_ref.ready;
+            player.games_played = player_ref.games_played;
+            player.games_won = player_ref.games_won;
         }
     }
 
@@ -544,14 +567,7 @@ impl Lobby {
         } else {
             self.current_player_index = (self.current_player_index + 1) % self.current_player_count;
         }
-        loop{
-            if self.players.lock().await[self.current_player_index as usize].state != player::FOLDED {
-                self.current_player_turn = self.players.lock().await[self.current_player_index as usize].name.clone();
-                return;
-            } else {
-                self.current_player_index = (self.current_player_index + 1) % self.current_player_count;
-            }
-        }
+        self.current_player_turn = self.players.lock().await[self.current_player_index as usize].name.clone();
     }
     
     pub async fn update_player_hand(&mut self, player_name: &str, hand: Vec<i32>) {
