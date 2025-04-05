@@ -369,6 +369,11 @@
       <div class="action-panel game-controls hidden" id="gameControls">
         <button onclick="showRules()" class="rules-btn">Rules</button>
         <button onclick="quitLobby()" class="quit-btn">Leave Game</button>
+        <button onclick="sendToServer('playerAction', {action: 'Check'})" class="action-btn">Check</button>
+        <button onclick="sendToServer('playerAction', {action: 'Call'})" class="action-btn">Call</button>
+        <button onclick="sendToServer('playerAction', {action: 'Raise'})" class="action-btn">Raise</button>
+        <button onclick="sendToServer('playerAction', {action: 'Fold'})" class="action-btn">Fold</button>
+        <button onclick="sendToServer('playerAction', {action: 'All_in'})" class="action-btn">All In</button>
       </div>
     </div>
 

@@ -219,8 +219,10 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
 /// This function does not return a value. It updates the players' wallets and game statistics.
 /// It also handles the display of hands to active players.
 pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_message: ClientMessage) -> bool {
+    println!("{}: {}", player.name, player.state);
     match client_message {
         ClientMessage::Check => {
+            println!("{}: Check", player.name);
             // only check when there is no bet to call
             if player.current_bet == current_max_bet && current_max_bet == 0 {
                 player.state = CHECKED;
@@ -1116,8 +1118,8 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                                 lobby_guard.update_lobby_names_status(lobby_name).await;
                                                             }
                                                             lobby_guard.broadcast_player_count().await;
-                                                            send_lobby_info(&player_lobby).await;
-                                                            send_player_list(&player_lobby).await;
+                                                            lobby_guard.send_lobby_info().await;
+                                                            lobby_guard.send_player_list().await;
                                     
                                                             lobby_guard.remove_player(player_name.clone()).await;
                                                             lobby_guard.broadcast_player_count().await;
