@@ -1658,12 +1658,13 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                     }
                                 }
                                 lobby::BETTING_ROUND => {
-                                    lobby_guard.broadcast(format!("------ Betting round {} ------", betting_round_count).to_string()).await;
-                                    
+                                    println!("betting round current player {}", player_name);
+                                    tx.send(Message::text(r#"{"message": "Betting Round"}"#)).unwrap();
+                                    // skip the player if they are folded or all in
                                     if player.state != player::FOLDED && player.state != player::ALL_IN {
-                                        // Handle betting for this player
                                         loop {
                                             let result = {
+                                                // Get next message from the player's websocket
                                                 let mut rx = player.rx.lock().await;
                                                 match rx.next().await {
                                                     Some(res) => res,
@@ -1673,118 +1674,213 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
 
                                             if let Ok(msg) = result {
                                                 if let Ok(text) = msg.to_str() {
+                                                    // Parse the incoming JSON message
                                                     let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
-                                                    
                                                     match client_msg {
                                                         Ok(ClientMessage::Disconnect) => {
-                                                            // Handle player disconnect during game
-                                                            player.state = player::FOLDED;
-                                                            lobby_guard.update_player_state(&player_name, player::FOLDED).await;
-                                                            lobby_guard.broadcast(format!("{} disconnected and folded", player_name)).await;
-                                                            break;
-                                                        }
-                                                        Ok(valid_action) => {
-                                                            let prev_player_bet = player.current_bet.clone();
+                                                            /*
+                                                            Add current player into to-be-rmoved list and keep their player reference active within the players vector
                                                             
-                                                            // Process betting action
-                                                            if betting_round_texas(&mut player, lobby_guard.current_max_bet.clone(), valid_action).await {
-                                                                // Update player state in the lobby
-                                                                lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].current_bet = player.current_bet;
-                                                                lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].state = player.state;
-                                                                lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].wallet = player.wallet;
-                                                                
-                                                                // Handle different player actions
-                                                                match player.state {
-                                                                    player::CHECKED | player::CALLED | player::FOLDED => {
-                                                                        lobby_guard.turns_remaining -= 1;
-                                                                        if player.state == player::CALLED {
-                                                                            lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                        }
-                                                                    }
-                                                                    player::ALL_IN => {
-                                                                        if player.current_bet > lobby_guard.current_max_bet {
-                                                                            lobby_guard.current_max_bet = player.current_bet.clone();
-                                                                            lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
-                                                                        } else {
-                                                                            lobby_guard.turns_remaining -= 1;
-                                                                        }
-                                                                        lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                    }
-                                                                    player::RAISED => {
-                                                                        lobby_guard.current_max_bet = player.current_bet.clone();
-                                                                        lobby_guard.pot += player.current_bet - prev_player_bet;
-                                                                        
-                                                                        // Reset turns counter when someone raises
-                                                                        lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
-                                                                    }
-                                                                    _ => {}
-                                                                }
-                                                                
-                                                                // Check for round completion
-                                                                if lobby_guard.turns_remaining == 0 {
-                                                                    // End of betting round
-                                                                    if betting_round_count == 4 {
-                                                                        // After river betting - go to showdown
-                                                                        lobby_guard.game_state = SHOWDOWN;
-                                                                    } else {
-                                                                        // Move to next dealing phase
-                                                                        lobby_guard.game_state = DEAL_CARDS;
-                                                                        betting_round_count += 1;
-                                                                    }
-                                                                    lobby_guard.get_next_player(true).await;
-                                                                } else {
-                                                                    // Move to next player
-                                                                    lobby_guard.get_next_player(false).await;
-                                                                }
-                                                                
-                                                                // Send updated game state to all players
-                                                                lobby_guard.send_lobby_game_info().await;
-                                                                lobby_guard.send_player_list().await;
-                                                                
-                                                                // Check if all but one player folded
-                                                                let mut folded_count = 0;
-                                                                for player in lobby_guard.players.lock().await.iter() {
-                                                                    if player.state == player::FOLDED {
-                                                                        folded_count += 1;
-                                                                    }
-                                                                }
-                                                                if folded_count == lobby_guard.current_player_count - 1 {
-                                                                    // If only one player remains, go to showdown
-                                                                    lobby_guard.game_state = SHOWDOWN;
-                                                                    lobby_guard.send_lobby_game_info().await;
-                                                                }
-                                                                
-                                                                break;
-                                                            }
+                                                            
+                                                             */
+
+
+                                                            // // Player disconnected entirely
+                                                            // let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
+                                                            // if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                                                            //     lobby_guard.remove_lobby(lobby_name.clone()).await;
+                                                            // } else {
+                                                            //     lobby_guard.update_lobby_names_status(lobby_name).await;
+                                                            // }
+                                                            // lobby_guard.broadcast_player_count().await;
+                                                            // lobby_guard.send_lobby_info().await;
+                                                            // lobby_guard.send_player_list().await;
+                                    
+                                                            // lobby_guard.remove_player(player_name.clone()).await;
+                                                            // lobby_guard.broadcast_player_count().await;
+                                                            
+                                                            // // Update player stats from database
+                                                            // if let Err(e) = db.update_player_stats(&player).await {
+                                                            //     eprintln!("Failed to update player stats: {}", e);
+                                                            // }
+                                                            
+                                                            // return "Disconnect".to_string();
                                                         }
                                                         _ => {
-                                                            // Invalid action
-                                                            tx.send(Message::text(r#"{"error": "Invalid action"}"#)).unwrap();
+                                                            // pass in the players input and validate it (check, call, raise, fold, all in)
+                                                            if let Ok(action) = client_msg {
+                                                                let (valid_action, reset) = betting_round(&mut player, &mut lobby_guard, action).await;
+                                                                if valid_action {
+                                                                    println!("valid action");
+                                                                    // update the server lobby player reference with updated clone data
+                                                                    lobby_guard.update_player_reference(&player).await;
+                                                                    if reset {
+                                                                        println!("reseting turns remaining");
+                                                                        // reset the turns_remaining counter if the player raised
+                                                                        lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                                                    }
+                                                                    break;
+                                                                }
+                                                            } else {
+                                                                println!("Invalid client message received BAD, they try again");
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
+                                    }
+                                    lobby_guard.turns_remaining -= 1;
+                                    println!("player {} finish turn", player_name);
+                                    if lobby_guard.check_end_game().await {
+                                        lobby_guard.clear_betting().await;
+                                        lobby_guard.game_state = lobby::SHOWDOWN;
                                     } else {
-                                        // Skip folded or all-in players
-                                        lobby_guard.turns_remaining -= 1;
-                                        
                                         if lobby_guard.turns_remaining == 0 {
-                                            // End of betting round
-                                            if betting_round_count == 4 {
-                                                lobby_guard.game_state = SHOWDOWN;
-                                            } else {
-                                                lobby_guard.game_state = DEAL_CARDS;
-                                                betting_round_count += 1;
+                                            if lobby_guard.game_state == lobby::FIRST_BETTING_ROUND {
+                                                lobby_guard.game_state = lobby::DRAW;
+                                            } else if lobby_guard.game_state == lobby::SECOND_BETTING_ROUND {
+                                                lobby_guard.game_state = lobby::SHOWDOWN;
                                             }
+                                            lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                            lobby_guard.clear_betting().await;
                                             lobby_guard.get_next_player(true).await;
+                                            println!("betting round finished, next player turn: {}", lobby_guard.current_player_turn);
                                         } else {
                                             lobby_guard.get_next_player(false).await;
+                                            println!("next player turn: {}", lobby_guard.current_player_turn);
                                         }
-                                        
-                                        lobby_guard.send_lobby_game_info().await;
-                                        lobby_guard.send_player_list().await;
                                     }
+                                    lobby_guard.send_lobby_game_info().await;
+                                    lobby_guard.send_player_list().await;
+                                    
+                                    // lobby_guard.broadcast(format!("------ Betting round {} ------", betting_round_count).to_string()).await;
+                                    
+                                    // if player.state != player::FOLDED && player.state != player::ALL_IN {
+                                    //     // Handle betting for this player
+                                    //     loop {
+                                    //         let result = {
+                                    //             let mut rx = player.rx.lock().await;
+                                    //             match rx.next().await {
+                                    //                 Some(res) => res,
+                                    //                 None => continue,
+                                    //             }
+                                    //         };
+
+                                    //         if let Ok(msg) = result {
+                                    //             if let Ok(text) = msg.to_str() {
+                                    //                 let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
+                                                    
+                                    //                 match client_msg {
+                                    //                     Ok(ClientMessage::Disconnect) => {
+                                    //                         // Handle player disconnect during game
+                                    //                         player.state = player::FOLDED;
+                                    //                         lobby_guard.update_player_state(&player_name, player::FOLDED).await;
+                                    //                         lobby_guard.broadcast(format!("{} disconnected and folded", player_name)).await;
+                                    //                         break;
+                                    //                     }
+                                    //                     Ok(valid_action) => {
+                                    //                         let prev_player_bet = player.current_bet.clone();
+                                                            
+                                    //                         // Process betting action
+                                    //                         if betting_round_texas(&mut player, lobby_guard.current_max_bet.clone(), valid_action).await {
+                                    //                             // Update player state in the lobby
+                                    //                             lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].current_bet = player.current_bet;
+                                    //                             lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].state = player.state;
+                                    //                             lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].wallet = player.wallet;
+                                                                
+                                    //                             // Handle different player actions
+                                    //                             match player.state {
+                                    //                                 player::CHECKED | player::CALLED | player::FOLDED => {
+                                    //                                     lobby_guard.turns_remaining -= 1;
+                                    //                                     if player.state == player::CALLED {
+                                    //                                         lobby_guard.pot += player.current_bet - prev_player_bet;
+                                    //                                     }
+                                    //                                 }
+                                    //                                 player::ALL_IN => {
+                                    //                                     if player.current_bet > lobby_guard.current_max_bet {
+                                    //                                         lobby_guard.current_max_bet = player.current_bet.clone();
+                                    //                                         lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
+                                    //                                     } else {
+                                    //                                         lobby_guard.turns_remaining -= 1;
+                                    //                                     }
+                                    //                                     lobby_guard.pot += player.current_bet - prev_player_bet;
+                                    //                                 }
+                                    //                                 player::RAISED => {
+                                    //                                     lobby_guard.current_max_bet = player.current_bet.clone();
+                                    //                                     lobby_guard.pot += player.current_bet - prev_player_bet;
+                                                                        
+                                    //                                     // Reset turns counter when someone raises
+                                    //                                     lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
+                                    //                                 }
+                                    //                                 _ => {}
+                                    //                             }
+                                                                
+                                    //                             // Check for round completion
+                                    //                             if lobby_guard.turns_remaining == 0 {
+                                    //                                 // End of betting round
+                                    //                                 if betting_round_count == 4 {
+                                    //                                     // After river betting - go to showdown
+                                    //                                     lobby_guard.game_state = SHOWDOWN;
+                                    //                                 } else {
+                                    //                                     // Move to next dealing phase
+                                    //                                     lobby_guard.game_state = DEAL_CARDS;
+                                    //                                     betting_round_count += 1;
+                                    //                                 }
+                                    //                                 lobby_guard.get_next_player(true).await;
+                                    //                             } else {
+                                    //                                 // Move to next player
+                                    //                                 lobby_guard.get_next_player(false).await;
+                                    //                             }
+                                                                
+                                    //                             // Send updated game state to all players
+                                    //                             lobby_guard.send_lobby_game_info().await;
+                                    //                             lobby_guard.send_player_list().await;
+                                                                
+                                    //                             // Check if all but one player folded
+                                    //                             let mut folded_count = 0;
+                                    //                             for player in lobby_guard.players.lock().await.iter() {
+                                    //                                 if player.state == player::FOLDED {
+                                    //                                     folded_count += 1;
+                                    //                                 }
+                                    //                             }
+                                    //                             if folded_count == lobby_guard.current_player_count - 1 {
+                                    //                                 // If only one player remains, go to showdown
+                                    //                                 lobby_guard.game_state = SHOWDOWN;
+                                    //                                 lobby_guard.send_lobby_game_info().await;
+                                    //                             }
+                                                                
+                                    //                             break;
+                                    //                         }
+                                    //                     }
+                                    //                     _ => {
+                                    //                         // Invalid action
+                                    //                         tx.send(Message::text(r#"{"error": "Invalid action"}"#)).unwrap();
+                                    //                     }
+                                    //                 }
+                                    //             }
+                                    //         }
+                                    //     }
+                                    // } else {
+                                    //     // Skip folded or all-in players
+                                    //     lobby_guard.turns_remaining -= 1;
+                                        
+                                    //     if lobby_guard.turns_remaining == 0 {
+                                    //         // End of betting round
+                                    //         if betting_round_count == 4 {
+                                    //             lobby_guard.game_state = SHOWDOWN;
+                                    //         } else {
+                                    //             lobby_guard.game_state = DEAL_CARDS;
+                                    //             betting_round_count += 1;
+                                    //         }
+                                    //         lobby_guard.get_next_player(true).await;
+                                    //     } else {
+                                    //         lobby_guard.get_next_player(false).await;
+                                    //     }
+                                        
+                                    //     lobby_guard.send_lobby_game_info().await;
+                                    //     lobby_guard.send_player_list().await;
+                                    // }
                                 }
                                 lobby::SHOWDOWN => {
                                     lobby_guard.broadcast("------ Showdown! ------".to_string()).await;
