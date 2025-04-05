@@ -206,6 +206,15 @@
       </div>
     </div>
 
+    <!-- Add this modal for stats after the User Manual modal -->
+    <div id="statsModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="closeStatsModal()">&times;</span>
+        <h2>Player Statistics</h2>
+        <div id="statsContent">Loading statistics...</div>
+      </div>
+    </div>
+
     <script>
       const playerCountDiv = document.getElementById("playerCount");
       const lobbyListDiv = document.getElementById("lobbyList");
@@ -252,6 +261,26 @@
           }
           if (response.error) {
             createLobbyError.innerText = response.error;
+          }
+          if (response.stats) {
+            console.log("Received stats:", response.stats);
+            
+            let statsHTML = '<table style="width:100%; border-collapse: collapse;">';
+            statsHTML += '<tr style="background-color: #2c3e50;"><th style="padding: 10px; text-align: left;">Stat</th><th style="padding: 10px; text-align: right;">Value</th></tr>';
+            
+            for (const [key, value] of Object.entries(response.stats)) {
+              const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+              statsHTML += `<tr style="border-bottom: 1px solid #3498db;">
+                <td style="padding: 8px;">${formattedKey}</td>
+                <td style="padding: 8px; text-align: right;">${key === 'wallet' ? '$' + value : value}</td>
+              </tr>`;
+            }
+            
+            statsHTML += '</table>';
+            document.getElementById("statsContent").innerHTML = statsHTML;
+          }
+          else if (response.error) {
+            document.getElementById("statsContent").innerHTML = `<div style="color: #e74c3c; text-align: center;">${response.error}</div>`;
           }
         } catch (e) {
           console.error("Invalid JSON", e);
@@ -369,6 +398,8 @@
       }
 
       function viewStats() {
+        showStatsModal(); // Show the modal immediately for user feedback
+        console.log("Requesting player statistics from server...");
         sendToServer(JSON.stringify({ action: "ShowStats" }));
       }
 
@@ -385,13 +416,25 @@
         document.getElementById('pdfError').style.display = 'block';
       }
 
+      function closeStatsModal() {
+        document.getElementById("statsModal").style.display = "none";
+      }
+
+      function showStatsModal() {
+        document.getElementById("statsModal").style.display = "flex";
+        document.getElementById("statsContent").innerHTML = "Loading statistics...";
+      }
+
       // Close modal if user clicks outside of it
       window.onclick = function (event) {
         if (event.target === createLobbyModal) {
           closeCreateLobbyModal();
         }
-        if (event.target == document.getElementById("userManualModal")) {
+        if (event.target === document.getElementById("userManualModal")) {
           closeUserManualModal();
+        }
+        if (event.target === document.getElementById("statsModal")) {
+          closeStatsModal();
         }
       };
     </script>
