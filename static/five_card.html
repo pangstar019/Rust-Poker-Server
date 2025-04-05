@@ -264,6 +264,7 @@
     <script>
         // Debug element for troubleshooting
         const debug = document.getElementById('debug');
+        gameState = 0;
         
         console.log('Game frame loaded');
         
@@ -297,6 +298,9 @@
                     potElement.textContent = `Pot: $${data.pot}`;
                     console.log(`Updated pot to $${data.pot}`);
                 }
+            }
+            if (data && data.gameState !== undefined) {
+                gameSate = data.gameState;
             }
             
             // Update turn indicator if provided
