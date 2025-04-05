@@ -51,8 +51,8 @@
 //! The module is designed to be used with a WebSocket server and uses async/await for concurrency.
 
 use super::*;
-use crate::lobby::Lobby;
-use crate::player::Player;
+use crate::lobby::{self, Lobby};
+use crate::player::{self, Player};
 use std::sync::Arc;
 use tokio::sync::{mpsc::UnboundedSender, Mutex};
 use warp:: ws::Message;
@@ -791,7 +791,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
     
     loop {
         match player.state {
-            IN_LOBBY => {
+            player::IN_LOBBY => {
                 loop {
                     let result = {
                         // Get next message from the player's websocket
@@ -922,17 +922,17 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                     if let Ok(mut lobby_guard) = player_lobby.try_lock(){
                         if lobby_guard.current_player_turn == player_name{
                             match  lobby_guard.game_state {
-                                JOINABLE => {
+                                lobby::JOINABLE => {
                                     continue;
                                 }
-                                START_OF_ROUND => {
+                                lobby::START_OF_ROUND => {
                                     lobby_guard.game_state = lobby::ANTE;
                                     
                                     // Initialize turns counter for tracking player actions
                                     lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                     lobby_guard.send_lobby_game_info().await;
                                 }
-                                ANTE => {
+                                lobby::ANTE => {
                                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                                     tx.send(Message::text(r#"{"message": "ANTE"}"#)).unwrap();
                                     println!("ante round message sent to player: {}", player_name);
@@ -969,7 +969,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     }
                                     lobby_guard.send_lobby_game_info().await;
                                 }
-                                DEAL_CARDS => {
+                                lobby::DEAL_CARDS => {
                                     // Deal 5 cards to each active player
                                     if player.hand.len() < 5 {
                                         player.hand.push(lobby_guard.deck.deal());
@@ -990,7 +990,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     }
                                 }
                                 
-                                FIRST_BETTING_ROUND | SECOND_BETTING_ROUND => {
+                                lobby::FIRST_BETTING_ROUND | lobby::SECOND_BETTING_ROUND => {
                                     lobby_guard.broadcast("------ betting round!------".to_string()).await;
                                     if player.state != player::FOLDED && player.state != player::ALL_IN {
                                         // lobby.broadcast(format!("{}'s turn to act!", player.name)).await;
@@ -1130,7 +1130,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         }
                                     }
                                 }
-                                DRAW => {
+                                lobby::DRAW => {
                                     lobby_guard.broadcast("------Drawing round!------".to_string()).await;
                                     
                                     // Check if current player isn't folded
@@ -1225,13 +1225,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         lobby_guard.send_player_list().await;
                                     }
                                 }
-                                // SECOND_BETTING_ROUND => {
-                                //     lobby.broadcast("Second betting round!".to_string()).await;
-                                //     betting_round(lobby).await;
-                                //     lobby.broadcast(format!("Second betting round complete!\nCurrent pot: {}", lobby.pot)).await;
-                                //     lobby.game_state = SHOWDOWN;
-                                // }
-                                SHOWDOWN => {
+                                lobby::SHOWDOWN => {
                                     lobby_guard.broadcast("------Showdown Round!------".to_string()).await;
     
                                     // Display all players' hands to everyone
@@ -1272,7 +1266,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     
                                     lobby_guard.game_state = UPDATE_DB;
                                 }
-                                UPDATE_DB => {
+                                lobby::UPDATE_DB => {
                                     // Update player stats and wallets in database
                                     let player_states = lobby_guard.get_player_names_and_status().await;
                                     for (player_name, _) in player_states {
