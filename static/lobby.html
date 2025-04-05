@@ -1101,6 +1101,11 @@
 
       // Send messages through parent using postMessage
       function sendToServer(message) {
+        // Parse message to check action type
+        const parsedMessage = JSON.parse(message);
+        if (parsedMessage.action !== "UpdateInput") {
+          console.log("Sending to server:", parsedMessage);
+        }
         window.parent.postMessage(
           {
             type: "sendWebSocket",
