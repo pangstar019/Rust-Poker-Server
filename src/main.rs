@@ -92,6 +92,11 @@ enum ClientMessage {
 async fn main() -> std::io::Result<()> {
     let db_pool = initialize_db().await;
     let database = Arc::new(Database::new(db_pool.clone()));
+
+    if let Err(e) = database.reset_all_login_statuses().await {
+        eprintln!("Failed to reset login statuses: {}", e);
+    }
+
     let server_lobby = Arc::new(Mutex::new(
         Lobby::new(lobby::NOT_SET, "Server Lobby".to_string()).await
     ));
@@ -157,10 +162,50 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn initialize_db() -> SqlitePool {
-    // Initialize the SQLite database connection pool.
-    let db_pool = SqlitePool::connect("sqlite://poker.db")
+    use std::path::Path;
+    use std::fs;
+    use std::io::Write;
+    
+    let db_path = "poker.db";
+    let schema_sql = r#"
+        CREATE TABLE IF NOT EXISTS players (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE,
+            games_played INTEGER DEFAULT 0,
+            games_won INTEGER DEFAULT 0,
+            wallet INTEGER DEFAULT 1000,
+            logged_in BOOLEAN DEFAULT FALSE
+        );
+    "#;
+    
+    // Check if database file exists
+    let db_exists = Path::new(db_path).exists();
+    
+    if !db_exists {
+        println!("Database file not found. Creating new database.");
+        
+        // Create empty file to ensure permissions are correct
+        let file = fs::File::create(db_path).expect("Failed to create database file");
+        file.sync_all().expect("Failed to sync database file");
+        println!("Empty database file created successfully.");
+    }
+    
+    // Connect to SQLite database with proper connection string
+    println!("Connecting to database at {}", db_path);
+    let db_pool = SqlitePool::connect(&format!("sqlite:{}", db_path))
         .await
         .expect("Failed to connect to database");
+    
+    // If database didn't exist, initialize it with schema
+    if !db_exists {
+        println!("Initializing database with schema.");
+        match sqlx::query(schema_sql).execute(&db_pool).await {
+            Ok(_) => println!("Database schema created successfully."),
+            Err(e) => eprintln!("Error creating schema: {}", e),
+        }
+    }
+    
+    println!("Database connection established successfully.");
     db_pool
 }
 
@@ -272,8 +317,11 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
     if let Some(player) = logged_in_player {
         if player.state == lobby::IN_SERVER {
             println!("Player logged in successfully.");
-            handle_server_lobby(player, server_lobby, db).await;
+            handle_server_lobby(player.clone(), server_lobby, db.clone()).await;
         }
+        
+        // Logout player when they disconnect
+        let _ = db.logout_player(&player.name).await;
     }
     
     println!("Connection closed");
@@ -309,7 +357,8 @@ async fn handle_login_phase(mut player: Player, db: Arc<Database>, server_lobby:
                             
                             return Some(player.clone());
                         } else {
-                            tx.send(Message::text(r#"{"message": "Login failed. Please try again."}"#)).unwrap();
+                            // Login failed, could be because user is already logged in
+                            tx.send(Message::text(r#"{"message": "Login failed. User may already be logged in or doesn't exist."}"#)).unwrap();
                         }
                     }
                     Ok(ClientMessage::Register { username }) => {
@@ -562,6 +611,7 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                     }
                     Ok(ClientMessage::Disconnect) => {
                         // Player disconnected entirely
+                        let _ = db.logout_player(&player_name).await;
                         let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
                         if lobby_status == lobby::GAME_LOBBY_EMPTY {
                             server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
