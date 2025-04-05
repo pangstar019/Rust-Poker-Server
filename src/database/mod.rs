@@ -45,10 +45,11 @@ impl Database {
     /// # Returns
     /// * `Ok(String)` - The generated player ID if registration succeeds.
     /// * `Err(sqlx::Error)` - If the insertion fails (e.g., duplicate username).
+    
     pub async fn register_player(&self, name: &str) -> Result<String, sqlx::Error> {
         let id = Uuid::new_v4().to_string();
         let wallet: u32 = 1000;
-        sqlx::query("INSERT INTO players (id, name, wallet) VALUES (?1, ?2, ?3)")
+        sqlx::query("INSERT INTO players (id, name, wallet, logged_in) VALUES (?1, ?2, ?3, TRUE)")
             .bind(&id)
             .bind(name)
             .bind(&wallet)
@@ -77,7 +78,7 @@ impl Database {
             Some(row) => {
                 let logged_in: bool = row.try_get("logged_in")?;
                 
-                if logged_in {
+                if (logged_in) {
                     // Player is already logged in
                     Ok(None) // Return None to indicate login failure
                 } else {
@@ -107,6 +108,18 @@ impl Database {
         
         Ok(())
     }
+
+    /// Resets the logged_in status of all users to FALSE
+    /// Called when the server starts to ensure clean state
+    pub async fn reset_all_login_statuses(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE players SET logged_in = FALSE")
+            .execute(&*self.pool)
+            .await?;
+        
+        println!("All user login statuses have been reset");
+        Ok(())
+    }
+
     /// Retrieves a player's statistics (games played, games won, and wallet balance) by username.
     /// 
     /// # Arguments
