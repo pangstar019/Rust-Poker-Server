@@ -20,6 +20,7 @@ A real-time, multiplayer poker server built with Rust and WebSockets supporting 
 - **Rust** (Tokio async runtime)
 - **Warp Web Framework** (WebSocket support)
 - **SQLite** (via `sqlx` for persistent storage)
+- **Frontend && Backend** (Html,CSS,JS)
 - **JSON Messaging Protocol**
 
 ---
