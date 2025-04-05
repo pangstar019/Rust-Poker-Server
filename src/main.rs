@@ -523,18 +523,28 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                         }
                     }
                     Ok(ClientMessage::ShowStats) => {
-                        // Fetch and display player stats
+                        // Get player stats from database
                         let stats = db.player_stats(&player_name).await;
+                        
                         if let Ok(stats) = stats {
-                            tx.send(Message::text(serde_json::json!({
+                            println!("Retrieved stats for {}: {:?}", player_name, stats);
+                            // Format stats as JSON and send to client
+                            let stats_json = serde_json::json!({
                                 "stats": {
-                                    "username": player_name,
+                                    "username": stats.name,
                                     "gamesPlayed": stats.games_played,
                                     "gamesWon": stats.games_won,
-                                    "wallet": stats.wallet
+                                    "wallet": stats.wallet,
+                                    "winRate": if stats.games_played > 0 {
+                                        format!("{}%", (stats.games_won as f64 / stats.games_played as f64) * 100.0)
+                                    } else {
+                                        "N/A".to_string()
+                                    }
                                 }
-                            }).to_string())).unwrap();
+                            });
+                            tx.send(Message::text(stats_json.to_string())).unwrap();
                         } else {
+                            println!("Error retrieving stats for {}: {:?}", player_name, stats);
                             tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
                         }
                     }
@@ -657,19 +667,28 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                         println!("for player {}, lobby state is {}", player_name, player_lobby.lock().await.game_state);
                     }
                     Ok(ClientMessage::ShowStats) => {
-                        // Get and send player stats
+                        // Get player stats from database
                         let stats = db.player_stats(&player_name).await;
+                        
                         if let Ok(stats) = stats {
+                            println!("Retrieved stats for {}: {:?}", player_name, stats);
+                            // Format stats as JSON and send to client
                             let stats_json = serde_json::json!({
                                 "stats": {
-                                    "username": player_name,
+                                    "username": stats.name,
                                     "gamesPlayed": stats.games_played,
                                     "gamesWon": stats.games_won,
-                                    "wallet": stats.wallet
+                                    "wallet": stats.wallet,
+                                    "winRate": if stats.games_played > 0 {
+                                        format!("{}%", (stats.games_won as f64 / stats.games_played as f64) * 100.0)
+                                    } else {
+                                        "N/A".to_string()
+                                    }
                                 }
                             });
                             tx.send(Message::text(stats_json.to_string())).unwrap();
                         } else {
+                            println!("Error retrieving stats for {}: {:?}", player_name, stats);
                             tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
                         }
                     }
@@ -754,17 +773,29 @@ async fn join_as_spectator(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: 
                         return "Disconnect".to_string();
                     }
                     Ok(ClientMessage::ShowStats) => {
-                        // Get and send player stats
+                        // Get player stats from database
                         let stats = db.player_stats(&player_name).await;
+                        
                         if let Ok(stats) = stats {
-                            tx.send(Message::text(serde_json::json!({
+                            println!("Retrieved stats for {}: {:?}", player_name, stats);
+                            // Format stats as JSON and send to client
+                            let stats_json = serde_json::json!({
                                 "stats": {
-                                    "username": player_name,
+                                    "username": stats.name,
                                     "gamesPlayed": stats.games_played,
                                     "gamesWon": stats.games_won,
-                                    "wallet": stats.wallet
+                                    "wallet": stats.wallet,
+                                    "winRate": if stats.games_played > 0 {
+                                        format!("{}%", (stats.games_won as f64 / stats.games_played as f64) * 100.0)
+                                    } else {
+                                        "N/A".to_string()
+                                    }
                                 }
-                            }).to_string())).unwrap();
+                            });
+                            tx.send(Message::text(stats_json.to_string())).unwrap();
+                        } else {
+                            println!("Error retrieving stats for {}: {:?}", player_name, stats);
+                            tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
                         }
                     }
                     _ => {
