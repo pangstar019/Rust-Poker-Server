@@ -369,11 +369,11 @@
       <div class="action-panel game-controls hidden" id="gameControls">
         <button onclick="showRules()" class="rules-btn">Rules</button>
         <button onclick="quitLobby()" class="quit-btn">Leave Game</button>
-        <button onclick="sendToServer('playerAction', {action: 'Check'})" class="action-btn">Check</button>
-        <button onclick="sendToServer('playerAction', {action: 'Call'})" class="action-btn">Call</button>
-        <button onclick="sendToServer('playerAction', {action: 'Raise'})" class="action-btn">Raise</button>
-        <button onclick="sendToServer('playerAction', {action: 'Fold'})" class="action-btn">Fold</button>
-        <button onclick="sendToServer('playerAction', {action: 'All_in'})" class="action-btn">All In</button>
+        <button onclick="gameAction('Check')" class="action-btn">Check</button>
+        <button onclick="gameAction('Call')" class="action-btn">Call</button>
+        <button onclick="gameAction('Raise')" class="action-btn">Raise</button>
+        <button onclick="gameAction('FOLD')" class="action-btn">Fold</button>
+        <button onclick="gameAction('All_in')" class="action-btn">All In</button>
       </div>
     </div>
 
@@ -685,6 +685,23 @@
 
       function updateInput(){
         sendToServer(JSON.stringify({ action: "UpdateInput" }));
+      }
+
+      function gameAction(action) {
+        if (action === "Check" || action === "Call") {
+          // Check or Call action
+          sendToServer(JSON.stringify({ action: "Check" }));
+        } else if (action === "Raise") {
+          // Raise action, prompt for amount
+          const raiseAmount = prompt("Enter raise amount:");
+          if (raiseAmount) {
+            sendToServer(JSON.stringify({ action: action, amount: raiseAmount }));
+          }
+        } else {
+          // Other actions like Fold or All In
+          sendToServer(JSON.stringify({ action: "Fold" }));
+        }
+        sendToServer(JSON.stringify({ action: action }));
       }
 
       function showRules() {

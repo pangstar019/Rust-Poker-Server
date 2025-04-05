@@ -220,9 +220,10 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
 /// It also handles the display of hands to active players.
 pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_message: ClientMessage) -> bool {
     println!("{}: {}", player.name, player.state);
+    player.tx.send(Message::text(r#"{"message": "gchecking input"}"#)).unwrap();
     match client_message {
         ClientMessage::Check => {
-            println!("{}: Check", player.name);
+            player.tx.send(Message::text(r#"{"message": "get checked"}"#)).unwrap();
             // only check when there is no bet to call
             if player.current_bet == current_max_bet && current_max_bet == 0 {
                 player.state = CHECKED;
@@ -1089,10 +1090,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         // lobby.broadcast(format!("{}'s turn to act!", player.name)).await;
                                         println!("player {} state {}", player.name, player.state);
                                         // send the JSON message to update the UI for the player
-                                        tx.send(Message::text(format!(r#"{{"message": "{}'s turn to act!"}}"#, player.name))).unwrap();
-                                        tx.send(Message::text(r#"{"message": ""}"#)).unwrap();
-                                        loop {
-                                            // UI has been updated, get the players response
+
                                             let result = {
                                                 // Get next message from the player's websocket
                                                 let mut rx = player.rx.lock().await;
@@ -1106,6 +1104,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                     // Parse the incoming JSON message
                                                     let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
                                                     
+                                                    tx.send(Message::text(format!(r#"{{"message": "got their response"}}"#))).unwrap();
                                                     let lobby_name = player_lobby.lock().await.name.clone();
                                     
                                                     match client_msg {
@@ -1135,6 +1134,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                             let prev_player_bet = player.current_bet.clone();
                                                             // pass in the players input and validate it (check, call, raise, fold, all in)
                                                             if let Ok(valid_message) = client_msg {
+                                                                tx.send(Message::text(format!(r#"{{"message": "checking their response"}}"#))).unwrap();
                                                                 if betting_round(&mut player, lobby_guard.current_max_bet.clone(), valid_message).await {
                                                                     // update the server lobby player reference with updated clone data
                                                                     // only values that are changed
