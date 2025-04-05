@@ -1161,11 +1161,14 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                                             if player.current_bet > lobby_guard.current_max_bet {
                                                                                 lobby_guard.current_max_bet = player.current_bet.clone();
                                                                                 lobby_guard.turns_remaining = lobby_guard.current_player_count - 1;
-                                                                                lobby_guard.get_next_player(false).await; 
-                                                                                lobby_guard.send_lobby_game_info().await;
-                                                                                lobby_guard.send_player_list().await;     
-                                                                                break;  
+                                                                            } else {
+                                                                                lobby_guard.turns_remaining -= 1;
                                                                             }
+                                                                            lobby_guard.pot += player.current_bet - prev_player_bet;
+                                                                            lobby_guard.get_next_player(false).await; 
+                                                                            lobby_guard.send_lobby_game_info().await;
+                                                                            lobby_guard.send_player_list().await;     
+                                                                            break;  
                                                                         }
                                                                         RAISED  => {
                                                                             println!("REACCCHEDDD");
