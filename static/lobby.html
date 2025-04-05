@@ -238,12 +238,6 @@
         flex-direction: column;
       }
       
-      .game-active .top-section {
-        display: flex;
-        gap: 20px;
-        margin-bottom: 15px;
-      }
-      
       .game-active .info-panel {
         flex: 2;
       }
@@ -299,6 +293,18 @@
         color: white;
         font-size: 20px;
         z-index: 1;
+      }
+
+      /* Add this to your existing styles section */
+      .game-active .top-section {
+        display: none;
+      }
+
+      /* When game finishes, ensure panels are reset properly */
+      .game-finished .top-section {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 15px;
       }
     </style>
   </head>
@@ -493,10 +499,19 @@
 
       // Handle WebSocket messages from parent frame
       window.addEventListener("message", (event) => {
-        if (event.data.type === "websocket") {
-          handleMessage(event.data.data);
-        }
-      });
+      console.log("Lobby received message:", event.data);
+      
+      // Forward 'sendWebSocket' messages directly to the parent (index.html)
+      if (event.data.type === "sendWebSocket") {
+        console.log("Forwarding to server:", event.data.data);
+        window.parent.postMessage(event.data, "*");
+      }
+      
+      // Handle other messages as before
+      else if (event.data.type === "websocket") {
+        handleMessage(event.data.data);
+      }
+    });
 
       function handleMessage(data) {
         try {
@@ -539,6 +554,27 @@
           // Handle stats
           if (response.stats) {
             updateStats(response.stats);
+          }
+
+          // In your handleMessage function, add handling for showdownHands type
+          if (response.type === "showdownHands") {
+            console.log("Showdown hands received:", response);
+            sendGameCommand("showdownHands", response);
+          }
+
+          // Inside your handleMessage function, add this condition
+          if (response.gameInfo && response.gameInfo.gameState === 0) { // Assuming 0 = game over/not started
+            // Check if we were previously in an active game
+            if (gameActive) {
+              console.log("Game has ended");
+              endGame();
+            }
+          }
+
+          // Also check for explicit game end message
+          if (response.gameEnd === true) {
+            console.log("Received game end notification");
+            endGame();
           }
         } catch (e) {
           console.error("Error parsing message:", e);
@@ -589,8 +625,11 @@
         
         // Update UI elements
         mainContainer.classList.add("game-active");
+        mainContainer.classList.remove("game-finished");
         lobbyControls.classList.add("hidden");
         gameControls.classList.remove("hidden");
+        
+        // The top section with player list and stats will be hidden by CSS
         
         // Send a message to the game iframe to start the game
         sendGameCommand("startGame", {
@@ -810,6 +849,23 @@
         // Hide loading message when iframe loads
         document.getElementById("gameLoading").style.display = "none";
       };
+
+      // Add this new function after startGame
+      function endGame() {
+        gameActive = false;
+        
+        // Update UI elements
+        mainContainer.classList.remove("game-active");
+        mainContainer.classList.add("game-finished");
+        lobbyControls.classList.remove("hidden");
+        gameControls.classList.add("hidden");
+        
+        // Refresh lobby data
+        refreshLobbyInfo();
+        refreshStats();
+        
+        console.log("Game ended");
+      }
     </script>
   </body>
 </html>

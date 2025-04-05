@@ -91,7 +91,7 @@ enum ClientMessage {
     Call,
     Raise { amount: i32 },
     Fold,
-    All_in,
+    AllIn,
 
 }
 
@@ -307,7 +307,6 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
         rx: Arc::new(Mutex::new(ws_rx)),
         state: lobby::LOGGING_IN,
         current_bet: 0,
-        dealer: false,
         ready: false,
         games_played: 0,
         games_won: 0,
@@ -506,6 +505,8 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                                     /*
                                     Use here to do more actions when the player disconnects from server if needed
                                      */
+                                    let _ = db.logout_player(&player_name).await;
+
                                     break;
                                 }
                                 
@@ -648,8 +649,7 @@ async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Dat
                     }
                     Ok(ClientMessage::Ready) => {
                         // READY UP - through the lobby
-                        let (_, _) = 
-                            player_lobby.lock().await.check_ready(player_name.clone()).await;                    
+                        player_lobby.lock().await.check_ready(player_name.clone()).await;                    
                         
                         // Update all clients with the new player list
                         player_lobby.lock().await.send_player_list().await;

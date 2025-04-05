@@ -266,7 +266,7 @@ pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_mes
                 return false;
             }
         }
-        ClientMessage::All_in => {
+        ClientMessage::AllIn => {
             player.state = ALL_IN;
             let all_in_amount = player.wallet;
             player.wallet = 0;
@@ -424,66 +424,6 @@ pub async fn betting_round(player: &mut Player, current_max_bet: i32, client_mes
 //     }
 // }
 
-/// Handles the showdown phase of the game, where players reveal their hands and determine the winner.
-/// The function evaluates the hands of all players and determines the winner(s) based on the hand rankings.
-/// It also updates the players' wallets and game statistics.
-/// 
-/// # Arguments
-/// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
-/// 
-/// # Returns
-/// 
-/// This function does not return a value. It updates the players' wallets and game statistics.
-/// It also handles the display of hands to active players.
-pub async fn showdown(lobby: &mut Lobby) {
-    let mut players = lobby.players.lock().await;
-    let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-    let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
-    let mut winning_players_names: Vec<String> = Vec::new();
-    let mut winning_hand = (-1, -1, -1, -1, -1, -1); // keeps track of current highest hand, could change when incrementing between players
-    let mut winning_players_indices: Vec<i32> = Vec::new();
-    let mut player_hand_type: (i32, i32, i32, i32, i32, i32);
-    for player in players.iter_mut() {
-        if player.state == FOLDED {
-            continue;
-        };
-        let player_hand = player.hand.clone();
-        if lobby.game_type == SEVEN_CARD_STUD || lobby.game_type == TEXAS_HOLD_EM {
-            // already has hand ranking
-            player_hand_type = (player.hand[0], player.hand[1], player.hand[2], player.hand[3], player.hand[4], player.hand[5]);
-        }
-        else {
-            player_hand_type = get_hand_type(&player_hand);
-        }
-        if player_hand_type.0 > winning_hand.0
-            || (player_hand_type.0 == winning_hand.0 && player_hand_type.1 > winning_hand.1)
-        {
-            winning_hand = player_hand_type;
-            winning_players.clear();
-            winning_players_names.clear();
-            winning_players.push(player.clone());
-            winning_players_names.push(player.name.clone());
-            winning_players_indices.clear();
-        } else if player_hand_type.0 == winning_hand.0 && player_hand_type.1 == winning_hand.1 {
-            winning_players.push(player.clone());
-            winning_players_names.push(player.name.clone());
-        }
-    }
-    let winning_player_count = winning_players.len();
-    let pot_share = lobby.pot / winning_player_count as i32;
-    for i in 0..winning_player_count {
-        for j in 0..players.len() {
-            if players[j].name == winning_players[i].name {
-                players[j].games_won += 1;
-                players[j].wallet += pot_share;
-                println!("Player {} wins {}!", players[j].name, pot_share);
-                println!("Player {} wallet: {}", players[j].name, players[j].wallet);
-            }
-        }
-    }
-    let winner_names = winning_players_names.join(", ");
-    lobby.lobby_wide_send(players_tx, format!("Winner: {}", winner_names)).await;
-}
 
 /// Translates a card number into a human-readable string representation.
 /// The function handles the card's rank and suit, and returns a string like "Ace of Hearts" or "10 of Diamonds".
@@ -578,7 +518,7 @@ pub async fn display_hand(players_tx: Vec<UnboundedSender<Message>>, players_han
 /// # Panics
 /// 
 /// This function will panic if the length of the hand is not 7.
-fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
+pub fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 7);
     println!("Hand: {:?}", hand);
     let mut best_hand = (-1, -1, -1, -1, -1, -1);
@@ -613,7 +553,7 @@ fn get_best_hand(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
 /// 
 /// This function returns a tuple containing the hand type and the ranks of the cards in the hand.
 /// The tuple format is (hand_type, rank1, rank2, rank3, rank4, rank5).
-fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
+pub fn get_hand_type(hand: &[i32]) -> (i32, i32, i32, i32, i32, i32) {
     assert!(hand.len() == 5);
 
     let mut ranks: Vec<i32> = hand
@@ -835,6 +775,28 @@ pub async fn blinds(lobby: &mut Lobby) {
     lobby.lobby_wide_send(players_tx, format!("{} has paid the small blind of {}\n{} has paid the big blind of {}", names[0], small_blind, names[1], big_blind)).await;
 }
 
+/// Converts a hand type integer to a readable string description.
+/// 
+/// # Arguments
+/// * `hand_type` - An integer representing the hand type (0-8).
+/// 
+/// # Returns
+/// This function returns a string representation of the hand type.
+fn hand_type_to_string(hand_type: i32) -> String {
+    match hand_type {
+        0 => "High Card".to_string(),
+        1 => "One Pair".to_string(),
+        2 => "Two Pair".to_string(),
+        3 => "Three of a Kind".to_string(),
+        4 => "Straight".to_string(),
+        5 => "Flush".to_string(),
+        6 => "Full House".to_string(),
+        7 => "Four of a Kind".to_string(),
+        8 => "Straight Flush".to_string(),
+        _ => "Unknown Hand".to_string(),
+    }
+}
+
 /// This function is used to find the next player to start the betting round.
 /// It iterates through the players in the lobby, starting from the dealer index,
 /// and finds the next player who has not folded.
@@ -885,10 +847,9 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
     }
     
     println!("{} has joined lobby: {}", player_name, player_lobby.lock().await.name);
-    
-    // Send initial lobby information - broad to all players in lobby
-    player_lobby.lock().await.send_lobby_info().await;
-    player_lobby.lock().await.send_player_list().await;
+    player_lobby.lock().await.new_player_join().await;
+
+
     // Add a delay of one second
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     
@@ -956,10 +917,8 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     player_lobby.lock().await.send_player_list().await;
                                 }
                                 Ok(ClientMessage::Ready) => {
-                                    // READY UP - through the lobby
-                                    let (_, _) = 
-                                        player_lobby.lock().await.check_ready(player_name.clone()).await;                    
-                                    
+                                        // READY UP - through the lobby
+                                        player_lobby.lock().await.check_ready(player_name.clone()).await;
                                         player_lobby.lock().await.send_player_list().await;
                                 }
                                 Ok(ClientMessage::ShowStats) => {
@@ -985,13 +944,17 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     let mut started = false;
                                     while (!started){
                                         if let Ok(mut player_lobby_guard) = player_lobby.try_lock() {
-                                            player_lobby_guard.setup_game().await;
+                                            player_lobby_guard.turns_remaining -= 1;
+                                            println!("turns remaining: {}", player_lobby_guard.turns_remaining);
+                                            if player_lobby_guard.turns_remaining == 0 {
+                                                player_lobby_guard.setup_game().await;
+                                            }
                                             player_lobby_guard.update_player_state(&player_name, lobby::IN_GAME).await;
                                             player.state = IN_GAME;
                                             started = true;
                                         }
                                     }
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
                                     break;
                                 }
                                 _ => {
@@ -1009,11 +972,23 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                     }
                 }
             }
-            _ => {
+            _ => { // player is in game
+                let stats = db.player_stats(&player_name).await;
+                if let Ok(stats) = stats {
+                    player.wallet = stats.wallet;
+                    player.games_played = 0;
+                    player.games_won = 0;
+                } else {
+                    tx.send(Message::text(r#"{"error": "Failed to retrieve wallet"}"#)).unwrap();
+                    // add player to be deleted, then kick to server
+                }
                 loop {
                     if let Ok(mut lobby_guard) = player_lobby.try_lock(){
                         if lobby_guard.current_player_turn == player_name{
                             match  lobby_guard.game_state {
+                                JOINABLE => {
+                                    continue;
+                                }
                                 START_OF_ROUND => {
                                     lobby_guard.game_state = ANTE;
                                     
@@ -1038,20 +1013,15 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     }
                                     lobby_guard.turns_remaining -= 1;
                                     {
-                                        let stats = db.player_stats(&player_name).await;
-                                        if let Ok(stats) = stats {
-                                            let stats_json = serde_json::json!({
-                                                "stats": {
-                                                    "username": player_name,
-                                                    "gamesPlayed": stats.games_played,
-                                                    "gamesWon": stats.games_won,
-                                                    "wallet": stats.wallet
-                                                }
-                                            });
-                                            tx.send(Message::text(stats_json.to_string())).unwrap();
-                                        } else {
-                                            tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
-                                        }
+                                        let stats_json = serde_json::json!({
+                                            "stats": {
+                                                "username": player_name,
+                                                "gamesPlayed": player.games_played,
+                                                "gamesWon": player.games_won,
+                                                "wallet": player.wallet
+                                            }
+                                        });
+                                        tx.send(Message::text(stats_json.to_string())).unwrap();
                                     }
                                     if lobby_guard.turns_remaining == 0{
                                         lobby_guard.game_state = DEAL_CARDS;
@@ -1064,7 +1034,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     lobby_guard.send_lobby_game_info().await;
                                 }
                                 DEAL_CARDS => {
-                                    println!("current player: {}", lobby_guard.current_player_turn);
                                     // Deal 5 cards to each active player
                                     if player.hand.len() < 5 {
                                         player.hand.push(lobby_guard.deck.deal());
@@ -1073,11 +1042,13 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     } else {
                                         lobby_guard.turns_remaining -= 1;
                                         if lobby_guard.turns_remaining == 0{
-                                            lobby_guard.send_player_list().await;
-                                            lobby_guard.game_state = FIRST_BETTING_ROUND;
+                                            // lobby_guard.game_state = FIRST_BETTING_ROUND;
+                                            lobby_guard.game_state = DRAW;
                                             lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                             lobby_guard.get_next_player(true).await;
-                                            println!("all cards dealt, moving to first betting round\nCurrent player: {}", lobby_guard.current_player_turn);
+                                            lobby_guard.send_player_list().await;
+                                            lobby_guard.send_lobby_game_info().await;
+                                            println!("all cards dealt, moving to first betting round");
                                         } else {
                                             lobby_guard.get_next_player(false).await;
                                         }
@@ -1212,21 +1183,100 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     }
                                 }
                                 DRAW => {
-                                    // ---------- use the below for end sequence ----
-                                    println!("player: {} reached the end of state machine", player_name);
-                                    lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
-                                    lobby_guard.set_player_ready(&player_name, false).await;
+                                    lobby_guard.broadcast("------Drawing round!------".to_string()).await;
+                                    
+                                    // Check if current player isn't folded
+                                    if player.state != FOLDED && player.state != ALL_IN {
+                                        // Notify player it's their turn to draw
+                                        tx.send(Message::text(r#"{"message": "Your turn to draw cards."}"#)).unwrap();
+                                        
+                                        // Send game info with the DRAW_PHASE state to trigger UI
+                                        lobby_guard.send_lobby_game_info().await;
+                                        
+                                        // Wait for player's selection of cards to exchange
+                                        loop {
+                                            let result = {
+                                                // Get next message from the player's websocket
+                                                let mut rx = player.rx.lock().await;
+                                                match rx.next().await {
+                                                    Some(res) => res,
+                                                    None => continue,
+                                                }
+                                            };
+                                            if let Ok(msg) = result {
+                                                if let Ok(text) = msg.to_str() {
+                                                    // Parse the incoming JSON message
+                                                    let draw_msg: Result<serde_json::Value, _> = serde_json::from_str(text);
+                                                    
+                                                    if let Ok(draw_data) = draw_msg {
+                                                        // Check if this is a DrawCards action
+                                                        if let Some("DrawCards") = draw_data.get("action").and_then(|a| a.as_str()) {
+                                                            // Get the indices of cards to replace
+                                                            if let Some(indices) = draw_data.get("cardIndices").and_then(|i| i.as_array()) {
+                                                                let indices: Vec<usize> = indices
+                                                                    .iter()
+                                                                    .filter_map(|idx| idx.as_i64().map(|i| i as usize))
+                                                                    .collect();
+                                                                
+                                                                // Get current hand
+                                                                let mut new_hand = player.hand.clone();
+                                                                
+                                                                // Replace selected cards with new ones
+                                                                for &idx in indices.iter() {
+                                                                    if idx < new_hand.len() {
+                                                                        new_hand[idx] = lobby_guard.deck.deal();
+                                                                    }
+                                                                }
+                                                                
+                                                                // Update player's hand
+                                                                player.hand = new_hand.clone();
+                                                                lobby_guard.update_player_hand(&player_name, new_hand).await;
+                                                                
+                                                                // Broadcast to other players
+                                                                let exchanged_count = indices.len();
+                                                                lobby_guard.broadcast(format!("{} exchanged {} cards.", player_name, exchanged_count)).await;
+                                                                println!("{} exchanged {} cards.", player_name, exchanged_count);
+                                                                
+                                                                // Move to the next player
+                                                                lobby_guard.turns_remaining -= 1;
+                                                                if lobby_guard.turns_remaining == 0 {
+                                                                    // All players have completed their draws
+                                                                    // lobby_guard.game_state = SECOND_BETTING_ROUND;
+                                                                    lobby_guard.game_state = SHOWDOWN;
+                                                                    lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                                                    lobby_guard.get_next_player(true).await;
+                                                                    lobby_guard.send_lobby_game_info().await;
+                                                                    lobby_guard.send_player_list().await;
+                                                                    println!("Drawing round complete, moving to second betting round");
+                                                                } else {
+                                                                    lobby_guard.get_next_player(false).await;
+                                                                    lobby_guard.send_lobby_game_info().await;
+                                                                    lobby_guard.send_player_list().await;
+                                                                }
+                                                                
+                                                                // Update game info
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Skip players who are folded or all-in
+                                        lobby_guard.turns_remaining -= 1;
+                                        if lobby_guard.turns_remaining == 0 {
+                                            // lobby_guard.game_state = SECOND_BETTING_ROUND;
+                                            lobby_guard.game_state = SHOWDOWN;
 
-                                    player.state = IN_LOBBY;
-                                    player.ready = false;
-                                    lobby_guard.get_next_player(false).await;
-                                    println!("lobby pot: {}", lobby_guard.pot);
-                                    break;
-                                    // -------------------------------------
-
-                                    // lobby.broadcast("------Drawing round!------".to_string()).await;
-                                    // drawing_round(lobby).await;
-                                    // lobby.game_state = SECOND_BETTING_ROUND;
+                                            lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                            lobby_guard.get_next_player(true).await;
+                                        } else {
+                                            lobby_guard.get_next_player(false).await;
+                                        }
+                                        lobby_guard.send_lobby_game_info().await;
+                                        lobby_guard.send_player_list().await;
+                                    }
                                 }
                                 // SECOND_BETTING_ROUND => {
                                 //     lobby.broadcast("Second betting round!".to_string()).await;
@@ -1236,22 +1286,67 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                 // }
                                 SHOWDOWN => {
                                     lobby_guard.broadcast("------Showdown Round!------".to_string()).await;
-                                    // lobby_guard.showdown().await;
+    
+                                    // Display all players' hands to everyone
+                                    let active_players = {
+                                        let players = lobby_guard.players.lock().await;
+                                        players.iter()
+                                            .filter(|p| p.state != FOLDED)
+                                            .map(|p| p.clone())
+                                            .collect::<Vec<Player>>()
+                                    };
+                                    
+                                    // Construct data for all active hands
+                                    let mut all_hands_data = Vec::new();
+                                    for player in active_players.iter() {
+                                        let hand_type = get_hand_type(&player.hand);
+                                        let hand_name = hand_type_to_string(hand_type.0);
+                                        
+                                        all_hands_data.push(serde_json::json!({
+                                            "playerName": player.name,
+                                            "hand": player.hand,
+                                            "handType": hand_name,
+                                            "handRank": hand_type
+                                        }));
+                                    }
+                                    
+                                    // Send all hands data to all players
+                                    let all_hands_json = serde_json::json!({
+                                        "type": "showdownHands",
+                                        "hands": all_hands_data
+                                    });
+                                    lobby_guard.broadcast(all_hands_json.to_string()).await;
+                                    
+                                    // Determine winner(s) and award pot
+                                    lobby_guard.showdown().await;
+                                    
+                                    // Wait briefly before ending the round
+                                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                    
                                     lobby_guard.game_state = UPDATE_DB;
                                 }
                                 UPDATE_DB => {
-                                    lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
-                                    lobby_guard.set_player_ready(&player_name, false).await;
+                                    // Update player stats and wallets in database
+                                    let player_states = lobby_guard.get_player_names_and_status().await;
+                                    for (player_name, _) in player_states {
+                                        // Reset player ready status
+                                        lobby_guard.set_player_ready(&player_name, false).await;
+                                        // Reset player state to IN_LOBBY
+                                        lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
+                                    }
                                     
-                                    player.state = IN_LOBBY;
-                                    player.ready = false;
-                                    lobby_guard.get_next_player(false).await;
-                                    lobby_guard.pot = 0;
-                                    lobby_guard.update_db().await;
-
-
-                                    println!("player: {} reached the end of state machine", player_name);
-                                    break;
+                                    // Send game end notification to all clients
+                                    let end_game_msg = serde_json::json!({
+                                        "gameEnd": true,
+                                        "message": "Game has ended. All players need to ready up to start a new game."
+                                    });
+                                    lobby_guard.broadcast(end_game_msg.to_string()).await;
+                                    
+                                    // Reset game state back to JOINABLE
+                                    lobby_guard.game_state = lobby::JOINABLE;
+                                    lobby_guard.send_lobby_game_info().await;
+                                    lobby_guard.send_player_list().await;
+                                    println!("Game ended, lobby reset to JOINABLE state");
                                 }
                                 _ => {
                                     panic!("Invalid game state: {}", lobby_guard.game_state);
@@ -1379,7 +1474,7 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) -> String {
                 lobby.broadcast("------Showdown Round!------".to_string()).await;
                 get_rid_of_x(&lobby).await;
                 update_players_hand(lobby).await; // first update the players hands
-                showdown(lobby).await; // then should be able to call the same showdown function
+                lobby.showdown().await; // then should be able to call the same showdown function
                 lobby.game_state = END_OF_ROUND;
             }
             END_OF_ROUND => {

@@ -14,7 +14,7 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex};
 use warp::{filters::ws::WebSocket, ws::Message};
-use crate::games;
+use games::{get_best_hand, get_hand_type};
 
 // use warp::filters::ws::SplitStream;
 
@@ -70,7 +70,6 @@ pub struct Player {
     pub rx: Arc<Mutex<SplitStream<warp::ws::WebSocket>>>,
     pub state: i32,
     pub current_bet: i32,
-    pub dealer: bool,
     pub ready: bool,
     pub games_played: i32,
     pub games_won: i32,
@@ -78,58 +77,6 @@ pub struct Player {
 }
 
 impl Player {
-    pub async fn get_player_input(&mut self) -> String {
-        let mut return_string: String = "".to_string();
-        let mut rx = self.rx.lock().await;
-        while let Some(result) = rx.next().await {
-            match result {
-                Ok(msg) => {
-                    if msg.is_close() {
-                        // handle all cases of disconnection here during game---------------------
-                        println!("{} has disconnected.", self.name);
-                        match self.state {
-                            IN_GAME => {
-                                self.state = IN_LOBBY;
-                            }
-                            ANTE => {
-                                self.state = FOLDED;
-                            }
-                            DEAL_CARDS => {
-                                self.state = FOLDED;
-                            }
-                            FIRST_BETTING_ROUND => {
-                                self.state = FOLDED;
-                            }
-                            DRAW => {
-                                self.state = FOLDED;
-                            }
-                            SECOND_BETTING_ROUND => {
-                                self.state = FOLDED;
-                            }
-                            _ => {
-                                self.state = IN_LOBBY;
-                            }
-                        }
-                        return "Disconnect".to_string(); // pass flag back
-                    } else {
-                        // handles client response here----------------
-                        if let Ok(str_input) = msg.to_str() {
-                            return_string = str_input.to_string();
-                        } else {
-                            return_string = "Error".to_string();
-                        }
-                        return return_string;
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Error input: {}", e);
-                    return "Disconnect".to_string();
-                }
-            }
-        }
-        return return_string;
-    }
-
     pub async fn player_join_lobby(
         &mut self,
         server_lobby: Arc<Mutex<Lobby>>,
@@ -193,7 +140,7 @@ pub struct Lobby {
 
 impl Lobby {
     pub async fn new(lobby_type: i32, lobby_name: String) -> Self {
-        let mut player_count = 0;
+        let player_count;
         match lobby_type {
             FIVE_CARD_DRAW => {
                 player_count = 5;
@@ -231,28 +178,24 @@ impl Lobby {
         }
     }
 
-    pub async fn increment_player_count(&mut self) {
-        self.current_player_count += 1;
-    }
-
-    pub async fn decrement_player_count(&mut self) {
-        self.current_player_count -= 1;
-    }
-
     pub async fn get_player_count(&self) -> i32 {
         self.current_player_count
     }
 
     pub async fn add_player(&mut self, mut player: Player) {
-        let mut players = self.players.lock().await;
-        player.state = IN_LOBBY;
-        players.push(player);
+        {
+            let mut players = self.players.lock().await;
+            player.state = IN_LOBBY;
+            players.push(player);
+        } // Release the immutable borrow of self.players here
+        
         self.current_player_count += 1;
         if self.current_player_count == self.max_player_count {
             self.game_state = GAME_LOBBY_FULL;
         } else {
             self.game_state = JOINABLE;
         }
+        self.new_player_join().await;
     }
 
     pub async fn add_spectator(&mut self, player: Player) {
@@ -481,9 +424,7 @@ impl Lobby {
         
         // Broadcast to players
         {
-            println!("broadcast to players");
             let players = self.players.lock().await;
-            println!("players lock acquired");
             for player in players.iter() {
                 let _ = player.tx.send(Message::text(json_message.clone()));
             }
@@ -491,7 +432,6 @@ impl Lobby {
 
         // Broadcast to spectators
         {
-            println!("broadcast to spectators");
             let spectators = self.spectators.lock().await;
             for spectator in spectators.iter() {
                 let _ = spectator.tx.send(Message::text(json_message.clone()));
@@ -517,25 +457,29 @@ impl Lobby {
         }
     }
 
-    pub async fn check_ready(&self, username: String) -> (i32, i32) {
+    pub async fn new_player_join(&mut self) {
+        self.turns_remaining += 1;
+
+        // Send initial lobby information - broad to all players in lobby
+        self.send_lobby_info().await;
+        self.send_player_list().await;
+    }
+
+    pub async fn check_ready(&mut self, username: String) {
+        self.turns_remaining = self.current_player_count;
         let mut players = self.players.lock().await;
         // self.broadcast(format!("{} is ready!", username)).await;
         if let Some(player) = players.iter_mut().find(|p| p.name == username) {
             player.ready = !player.ready;
         }
-        let mut ready_player_count = 0;
-        for player in players.iter() {
-            if player.ready {
-                ready_player_count += 1;
-            }
-        }
-        return (ready_player_count, self.current_player_count);
     }
 
-    pub async fn reset_ready(&self) {
+    pub async fn reset_ready(&mut self) {
+        self.turns_remaining = self.current_player_count;
         let mut players = self.players.lock().await;
         for player in players.iter_mut() {
             player.ready = false;
+            player.state = IN_LOBBY;
         }
     }
     
@@ -553,10 +497,72 @@ impl Lobby {
         self.first_betting_player = (self.first_betting_player + 1) % self.current_player_count;
         self.current_player_index = self.first_betting_player;
         self.current_player_turn = self.players.lock().await[self.first_betting_player as usize].name.clone();
+        self.turns_remaining = self.current_player_count;
         println!("current player turn: {}", self.current_player_turn);
         self.game_state = START_OF_ROUND;
         self.deck.shuffle();
         println!("lobby {} set up for startin game.", self.name);
+    }
+
+    /// Handles the showdown phase of the game, where players reveal their hands and determine the winner.
+    /// The function evaluates the hands of all players and determines the winner(s) based on the hand rankings.
+    /// It also updates the players' wallets and game statistics.
+    /// 
+    /// # Arguments
+    /// * `lobby` - A mutable reference to the `Lobby` struct, which contains the game state and player information.
+    /// 
+    /// # Returns
+    /// 
+    /// This function does not return a value. It updates the players' wallets and game statistics.
+    /// It also handles the display of hands to active players.
+    pub async fn showdown(&self) {
+        let mut players = self.players.lock().await;
+        let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+        let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
+        let mut winning_players_names: Vec<String> = Vec::new();
+        let mut winning_hand = (-1, -1, -1, -1, -1, -1); // keeps track of current highest hand, could change when incrementing between players
+        let mut winning_players_indices: Vec<i32> = Vec::new();
+        let mut player_hand_type: (i32, i32, i32, i32, i32, i32);
+        for player in players.iter_mut() {
+            if player.state == FOLDED {
+                continue;
+            };
+            let player_hand = player.hand.clone();
+            if self.game_type == SEVEN_CARD_STUD || self.game_type == TEXAS_HOLD_EM {
+                // already has hand ranking
+                player_hand_type = (player.hand[0], player.hand[1], player.hand[2], player.hand[3], player.hand[4], player.hand[5]);
+            }
+            else {
+                player_hand_type = get_hand_type(&player_hand);
+            }
+            if player_hand_type.0 > winning_hand.0
+                || (player_hand_type.0 == winning_hand.0 && player_hand_type.1 > winning_hand.1)
+            {
+                winning_hand = player_hand_type;
+                winning_players.clear();
+                winning_players_names.clear();
+                winning_players.push(player.clone());
+                winning_players_names.push(player.name.clone());
+                winning_players_indices.clear();
+            } else if player_hand_type.0 == winning_hand.0 && player_hand_type.1 == winning_hand.1 {
+                winning_players.push(player.clone());
+                winning_players_names.push(player.name.clone());
+            }
+        }
+        let winning_player_count = winning_players.len();
+        let pot_share = self.pot / winning_player_count as i32;
+        for i in 0..winning_player_count {
+            for j in 0..players.len() {
+                if players[j].name == winning_players[i].name {
+                    players[j].games_won += 1;
+                    players[j].wallet += pot_share;
+                    println!("Player {} wins {}!", players[j].name, pot_share);
+                    println!("Player {} wallet: {}", players[j].name, players[j].wallet);
+                }
+            }
+        }
+        let winner_names = winning_players_names.join(", ");
+        self.lobby_wide_send(players_tx, format!("Winner: {}", winner_names)).await;
     }
     
     
