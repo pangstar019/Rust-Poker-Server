@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texas Hold'em Poker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1e293b;
+            color: white;
+            overflow: hidden;
+        }
+
+        #debug {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(0,0,0,0.7);
+            padding: 5px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 100;
+        }
+
+        .game-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .game-header {
+            background-color: #0f2937;
+            color: #f8c471;
+            padding: 10px;
+            text-align: center;
+            font-size: 20px;
+            border-bottom: 2px solid #713f12;
+        }
+
+        .table-area {
+            flex: 1;
+            position: relative;
+            margin: 20px;
+            background-color: #15803d;
+            border-radius: 50%;
+            border: 10px solid #713f12;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
+        }
+
+        .table-center {
+            text-align: center;
+        }
+
+        .community-cards {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .pot {
+            font-size: 22px;
+            font-weight: bold;
+            color: #fcd34d;
+            margin-bottom: 15px;
+            text-shadow: 1px 1px 2px #000;
+        }
+
+        .player-positions {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+
+        .player-spot {
+            position: absolute;
+            width: 120px;
+            padding: 8px;
+            background-color: rgba(0,0,0,0.6);
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .current-player {
+            background-color: rgba(0,0,0,0.8);
+            border: 2px solid #f8c471;
+        }
+
+        .player-turn {
+            background-color: rgba(61, 12, 82, 0.8);
+            box-shadow: 0 0 15px #9333ea;
+            border: 2px solid #9333ea;
+            animation: pulse-turn 2s infinite;
+        }
+
+        @keyframes pulse-turn {
+            0% { box-shadow: 0 0 15px #9333ea; }
+            50% { box-shadow: 0 0 25px #9333ea; }
+            100% { box-shadow: 0 0 15px #9333ea; }
+        }
+
+        .player-name {
+            font-weight: bold;
+            color: #f8c471;
+            margin-bottom: 5px;
+            word-break: break-word;
+        }
+
+        .player-chips {
+            font-size: 14px;
+            color: #bdc3c7;
+        }
+
+        .player-cards {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .card {
+            display: inline-block;
+            width: 35px;
+            height: 50px;
+            margin: 0 2px;
+            background-color: #fff;
+            border: 1px solid #333;
+            border-radius: 4px;
+            text-align: center;
+            line-height: 50px;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        .card.facedown {
+            background: linear-gradient(135deg, #1e40af 25%, #1e3a8a 25%, #1e3a8a 50%, #1e40af 50%, #1e40af 75%, #1e3a8a 75%);
+            background-size: 20px 20px;
+            color: transparent;
+        }
+
+        .card-placeholder {
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 1px dashed rgba(255, 255, 255, 0.5);
+            color: transparent;
+        }
+
+        .red-card {
+            color: #cc0000;
+        }
+
+        .black-card {
+            color: #000;
+        }
+
+        .folded-indicator {
+            display: block;
+            color: #ff4444;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 14px;
+        }
+
+        .player-folded {
+            opacity: 0.7;
+        }
+
+        .player-bet {
+            position: absolute;
+            top: -20px;
+            background-color: rgba(0,0,0,0.5);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 14px;
+            color: gold;
+        }
+
+        .current-player .card:not(.facedown) {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            border: 2px solid #f8c471;
+        }
+
+        .game-status {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            padding: 8px 12px;
+            background-color: rgba(0,0,0,0.7);
+            border-radius: 4px;
+        }
+
+        .card.dealing {
+            animation: dealCard 0.3s ease-out;
+            transform-origin: center center;
+        }
+
+        @keyframes dealCard {
+            0% {
+                opacity: 0;
+                transform: translateY(-50px) scale(0.8);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .wallet-decrease {
+            color: #ff4444;
+            animation: flash-decrease 0.8s;
+        }
+
+        .wallet-increase {
+            color: #44ff44;
+            animation: flash-increase 0.8s;
+        }
+
+        @keyframes flash-decrease {
+            0%, 100% { color: #bdc3c7; }
+            50% { color: #ff4444; }
+        }
+
+        @keyframes flash-increase {
+            0%, 100% { color: #bdc3c7; }
+            50% { color: #44ff44; }
+        }
+
+        .winner {
+            animation: winner-glow 2s infinite;
+            box-shadow: 0 0 20px gold;
+        }
+
+        @keyframes winner-glow {
+            0%, 100% { box-shadow: 0 0 20px gold; }
+            50% { box-shadow: 0 0 30px #ffcc00; }
+        }
+
+        .hand-type {
+            font-size: 12px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+
+        .winner-label {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: gold;
+            color: black;
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 4px;
+            animation: winner-bounce 1s infinite;
+        }
+
+        @keyframes winner-bounce {
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="debug">Loading Texas Hold'em...</div>
+    
+    <div class="game-container">
+        <div class="game-header">Texas Hold'em Poker</div>
+        
+        <div class="table-area">
+            <div class="table-center">
+                <div class="community-cards" id="communityCards">
+                    <!-- Community cards will be generated here -->
+                    <div class="card facedown">?</div>
+                    <div class="card facedown">?</div>
+                    <div class="card facedown">?</div>
+                    <div class="card facedown">?</div>
+                    <div class="card facedown">?</div>
+                </div>
+                <div class="pot">Pot: $0</div>
+            </div>
+            
+            <div class="player-positions" id="playerPositions">
+                <!-- Player spots will be generated here -->
+            </div>
+            
+            <div class="game-status" id="gameStatus">
+                Waiting for players...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Debug element for troubleshooting
+        const debug = document.getElementById('debug');
+        let gameState = 0;
+        
+        console.log('Texas Hold\'em game frame loaded');
+        
+        // Game elements
+        const playerPositions = document.getElementById('playerPositions');
+        const gameStatus = document.getElementById('gameStatus');
+        const communityCards = document.getElementById('communityCards');
+
+        // Game states
+        const JOINABLE = 0;
+        const START_OF_ROUND = 1;
+        const ANTE = 2;
+        const SMALL_AND_BIG_BLIND = 3;
+        const DEAL_CARDS = 4;
+        const BETTING_ROUND = 5;
+        const SHOWDOWN = 7;
+
+        // Add these constants near the top of your script section
+        const IN_LOBBY = 0;
+        const FOLDED = 1;
+        const CHECKED = 2;
+        const CALLED = 3;
+        const RAISED = 4;
+        const ALL_IN = 5;
+        const IN_GAME = 6;
+
+        // Store showdown data for reference
+        let showdownData = null;
+        
+        // Store current player's username
+        const currentPlayerName = localStorage.getItem('currentPlayerName');
+
+        // Initialize when the page loads
+        window.onload = function() {
+            console.log('Texas Hold\'em interface initialized');
+            
+            // Let the parent frame know we're ready
+            window.parent.postMessage({
+                type: 'gameFrameReady',
+                gameType: 'Texas Hold\'em'
+            }, '*');
+        };
+
+        // Listen for messages from the parent frame
+        window.addEventListener("message", (event) => {
+            console.log("Received message from parent frame: ", event.data);
+            if (event.data.type === "command") {
+                handleCommand(event.data);
+            }
+        });
+
+        // Enhance the message handling for additional types
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'updateGameInfo') {
+                updateGameInfo(event.data.data);
+            } else if (event.data.type === 'updatePlayers') {
+                updatePlayers(event.data.data.players, event.data.data.gameActive);
+            } else if (event.data.type === 'startGame') {
+                startGame(event.data.data);
+            } else if (event.data.type === 'showdownHands') {
+                // Handle showdown data
+                handleShowdownData(event.data.data);
+            }
+        });
+
+        function handleCommand(data) {
+            if (data.command === "updatePlayers") {
+                updatePlayers(data.data.players, data.data.gameActive);
+            } else if (data.command === "startGame") {
+                startGame(data.data);
+            } else if (data.command === "updateGameInfo") {
+                console.log("Game info received: ", data.data);
+                updateGameInfo(data.data);
+            } else if (data.command === "showdownHands") {
+                handleShowdownData(data.data);
+            }
+        }
+
+        function updateGameInfo(data) {
+            // Update pot value if provided
+            if (data && data.pot !== undefined) {
+                const potElement = document.querySelector('.pot');
+                if (potElement) {
+                    potElement.textContent = `Pot: $${data.pot}`;
+                    console.log(`Updated pot to $${data.pot}`);
+                }
+            }
+            
+            // Update game state if provided
+            if (data && data.gameState !== undefined) {
+                updateGameState(data.gameState);
+            }
+            
+            // Update community cards if provided
+            if (data && data.communityCards) {
+                updateCommunityCards(data.communityCards);
+            }
+            
+            // Update turn indicator if provided
+            if (data && data.currentPlayerTurn) {
+                // Remove turn highlight from all players
+                const allPlayerSpots = document.querySelectorAll('.player-spot');
+                allPlayerSpots.forEach(spot => {
+                    spot.classList.remove('player-turn');
+                });
+                
+                // Find the player whose turn it is and highlight them
+                const currentTurnPlayer = data.currentPlayerTurn;
+                let playerFound = false;
+                
+                allPlayerSpots.forEach(spot => {
+                    const nameElement = spot.querySelector('.player-name');
+                    if (nameElement && nameElement.textContent === currentTurnPlayer) {
+                        spot.classList.add('player-turn');
+                        playerFound = true;
+                        
+                        // Update game status text based on player's turn
+                        const isCurrentUser = currentTurnPlayer === localStorage.getItem('currentPlayerName');
+                        
+                        if (isCurrentUser) {
+                            gameStatus.textContent = `Your turn!`;
+                        } else {
+                            gameStatus.textContent = `${currentTurnPlayer}'s turn`;
+                        }
+                    }
+                });
+                
+                if (!playerFound) {
+                    console.log(`Could not find player spot for ${currentTurnPlayer}`);
+                }
+            }
+        }
+        
+        // Update community cards
+        function updateCommunityCards(cards) {
+            if (!cards || !Array.isArray(cards)) {
+                return;
+            }
+            
+            communityCards.innerHTML = '';
+            
+            // If no cards, show 5 facedown placeholders
+            if (cards.length === 0) {
+                for (let i = 0; i < 5; i++) {
+                    const card = document.createElement('div');
+                    card.className = 'card facedown';
+                    card.textContent = '?';
+                    communityCards.appendChild(card);
+                }
+                return;
+            }
+            
+            // Add visible cards
+            cards.forEach((cardValue, index) => {
+                const card = document.createElement('div');
+                card.className = `card dealing ${getCardColor(cardValue)}`;
+                card.textContent = cardToString(cardValue);
+                
+                // Remove dealing animation after it completes
+                setTimeout(() => {
+                    card.classList.remove('dealing');
+                }, 300 + (index * 100));
+                
+                communityCards.appendChild(card);
+            });
+            
+            // Add facedown cards for the remaining spots
+            const remainingCards = 5 - cards.length;
+            for (let i = 0; i < remainingCards; i++) {
+                const card = document.createElement('div');
+                card.className = 'card facedown';
+                card.textContent = '?';
+                communityCards.appendChild(card);
+            }
+        }
+        
+        // Update player information
+        function updatePlayers(players, gameActive) {
+            // Safety checks
+            if (!players) {
+                console.log('Warning: players data is undefined');
+                return;
+            }
+
+            if (!Array.isArray(players)) {
+                console.log('Warning: players is not an array, attempting to fix');
+                if (typeof players === 'object') {
+                    players = [players];
+                } else {
+                    return;
+                }
+            }
+            
+            console.log(`Updating ${players.length} players info`);
+
+            // Position players only if game is not active or we have no player spots yet
+            if (!gameActive || playerPositions.children.length === 0) {
+                positionPlayers(players);
+            }
+            
+            // Map player names to their DOM elements
+            const playerElements = {};
+            const playerSpots = document.querySelectorAll('.player-spot');
+            playerSpots.forEach(spot => {
+                const nameElement = spot.querySelector('.player-name');
+                if (nameElement) {
+                    playerElements[nameElement.textContent] = spot;
+                }
+            });
+            
+            // Update player information
+            players.forEach(player => {
+                const playerElement = playerElements[player.name];
+                if (!playerElement) return;
+                
+                // Update chips/wallet
+                const chipsElement = playerElement.querySelector('.player-chips');
+                if (chipsElement) {
+                    const walletAmount = player.wallet || 0;
+                    
+                    // Add visual effect when wallet changes
+                    const currentAmount = parseInt(chipsElement.dataset.lastAmount || walletAmount);
+                    if (currentAmount !== walletAmount) {
+                        // Add a temporary class for animation
+                        if (currentAmount > walletAmount) {
+                            chipsElement.classList.add('wallet-decrease');
+                            setTimeout(() => chipsElement.classList.remove('wallet-decrease'), 1000);
+                        } else if (currentAmount < walletAmount) {
+                            chipsElement.classList.add('wallet-increase');
+                            setTimeout(() => chipsElement.classList.remove('wallet-increase'), 1000);
+                        }
+                    }
+                    
+                    // Store new amount for next comparison
+                    chipsElement.dataset.lastAmount = walletAmount;
+                    chipsElement.textContent = `$${walletAmount}`;
+                }
+                
+                // Update player's bet if present
+                if (player.currentBet !== undefined && player.currentBet > 0) {
+                    let betElement = playerElement.querySelector('.player-bet');
+                    if (!betElement) {
+                        betElement = document.createElement('div');
+                        betElement.className = 'player-bet';
+                        playerElement.appendChild(betElement);
+                    }
+                    betElement.textContent = `Bet: $${player.currentBet}`;
+                    betElement.style.display = 'block';
+                } else {
+                    const betElement = playerElement.querySelector('.player-bet');
+                    if (betElement) {
+                        betElement.style.display = 'none';
+                    }
+                }
+                
+                // Update player state (folded, etc.)
+                if (player.state !== undefined) {
+                    if (player.state === FOLDED) { // FOLDED = 1, not 3
+                        const foldedDiv = document.createElement('div');
+                        foldedDiv.className = 'folded-indicator';
+                        foldedDiv.textContent = 'FOLDED';
+                        cardsContainer.appendChild(foldedDiv);
+                        playerElement.classList.add('player-folded');
+                        return;
+                    } else {
+                        playerElement.classList.remove('player-folded');
+                    }
+                }
+            });
+            
+            // Update player hands if available
+            const handsData = players
+                .filter(player => player.hand && player.hand.length > 0)
+                .map(player => ({
+                    playerName: player.name,
+                    hand: player.hand,
+                    state: player.state
+                }));
+                
+            if (handsData.length > 0) {
+                updatePlayerHands(handsData);
+            }
+        }
+
+        // Function to update player hands
+        function updatePlayerHands(hands) {
+            if (!hands || !Array.isArray(hands) || hands.length === 0) {
+                console.log("No hand data to update");
+                return;
+            }
+            
+            // Get current player name
+            const currentPlayerName = localStorage.getItem('currentPlayerName');
+            
+            // Get all player spots in their current positions
+            const playerSpots = document.querySelectorAll('.player-spot');
+            
+            // Map player names to their DOM elements
+            const playerElements = {};
+            playerSpots.forEach(spot => {
+                const nameElement = spot.querySelector('.player-name');
+                if (nameElement) {
+                    playerElements[nameElement.textContent] = spot;
+                }
+            });
+            
+            // Update each player's cards
+            hands.forEach(playerHand => {
+                const playerName = playerHand.playerName;
+                const hand = playerHand.hand || [];
+                const state = playerHand.state;
+                const isCurrentPlayer = (playerName === currentPlayerName);
+                
+                // Find the DOM element for this player
+                const playerElement = playerElements[playerName];
+                if (!playerElement) {
+                    console.log(`No DOM element found for player ${playerName}`);
+                    return;
+                }
+                
+                // Get the cards container for this player
+                const cardsContainer = playerElement.querySelector('.player-cards');
+                if (!cardsContainer) return;
+                
+                // Clear existing cards
+                cardsContainer.innerHTML = '';
+                
+                // If player folded, show folded state
+                if (state === FOLDED) { // FOLDED = 1, not 3
+                    const foldedDiv = document.createElement('div');
+                    foldedDiv.className = 'folded-indicator';
+                    foldedDiv.textContent = 'FOLDED';
+                    cardsContainer.appendChild(foldedDiv);
+                    playerElement.classList.add('player-folded');
+                    return;
+                }
+                
+                // Remove folded class if it exists
+                playerElement.classList.remove('player-folded');
+                
+                // Skip if hand is empty - don't show any cards
+                if (hand.length === 0) {
+                    return;
+                }
+                
+                // Create and add cards
+                const maxCards = 2; // Texas Hold'em has 2 hole cards
+                const cardCount = Math.min(hand.length, maxCards);
+                
+                for (let i = 0; i < cardCount; i++) {
+                    const card = document.createElement('div');
+                    
+                    // Only add the dealing animation class for the current player
+                    card.className = isCurrentPlayer ? 'card dealing' : 'card';
+                    
+                    // If this is the current player, show the actual card
+                    // Otherwise keep it face down
+                    if (isCurrentPlayer) {
+                        card.textContent = cardToString(hand[i]);
+                        card.dataset.cardValue = hand[i];
+                        card.classList.add(getCardColor(hand[i]));
+                        
+                        // Remove the dealing animation class after the animation completes
+                        setTimeout(() => {
+                            card.classList.remove('dealing');
+                        }, 300 + (i * 100));
+                    } else {
+                        card.textContent = '?';
+                        card.classList.add('facedown');
+                    }
+                    
+                    cardsContainer.appendChild(card);
+                }
+                
+                // Fill remaining slots with empty placeholders if needed
+                for (let i = cardCount; i < maxCards; i++) {
+                    const emptyCard = document.createElement('div');
+                    emptyCard.className = 'card card-placeholder';
+                    cardsContainer.appendChild(emptyCard);
+                }
+            });
+        }
+
+        // Calculate positions and create player spots around the table
+        function positionPlayers(players) {
+            console.log(`Positioning ${players.length} players`);
+            
+            // Clear existing player spots
+            playerPositions.innerHTML = '';
+            
+            // Get stored current player name
+            const storedCurrentPlayerName = localStorage.getItem('currentPlayerName');
+            console.log("Stored current player name: ", storedCurrentPlayerName);
+            
+            // Find current player index in original array
+            let currentPlayerIndex = -1;
+            if (storedCurrentPlayerName) {
+                currentPlayerIndex = players.findIndex(p => p.name === storedCurrentPlayerName);
+            }
+            
+            // If current player not found, use first player
+            if (currentPlayerIndex === -1) {
+                currentPlayerIndex = 0;
+            }
+            
+            // Store player index mapping for later use
+            window.playerIndices = {};
+            
+            // Position players around the table, maintaining the original order
+            const totalPlayers = players.length;
+            const angleStep = 360 / totalPlayers;
+            
+            // Create and position all players, starting with the current player at bottom
+            for (let i = 0; i < totalPlayers; i++) {
+                // Calculate the player's position in the original array
+                const playerIndex = (currentPlayerIndex + i) % totalPlayers;
+                const player = players[playerIndex];
+                
+                // Store the mapping between player name and rotational index
+                window.playerIndices[player.name] = i;
+                
+                // Calculate the angle, starting at 90 degrees (bottom)
+                const angle = (90 + (i * angleStep)) % 360;
+                
+                // Create the player spot
+                const playerSpot = createPlayerSpot(player, angle);
+                
+                // Add "current-player" class if this is the current player
+                if (playerIndex === currentPlayerIndex) {
+                    playerSpot.classList.add('current-player');
+                }
+                
+                playerPositions.appendChild(playerSpot);
+            }
+        }
+
+        // Create player spot element
+        function createPlayerSpot(player, angle) {
+            const playerSpot = document.createElement('div');
+            playerSpot.className = 'player-spot';
+            
+            // Create HTML for player info
+            playerSpot.innerHTML = `
+                <div class="player-name">${player.name}</div>
+                <div class="player-chips" data-last-amount="${player.wallet || 0}">$${player.wallet || 0}</div>
+                <div class="player-cards">
+                    <!-- Cards will be added dynamically -->
+                </div>
+            `;
+            
+            // Position based on angle
+            const radius = 40; // % of container
+            const radians = angle * (Math.PI / 180);
+            const x = 50 + radius * Math.cos(radians);
+            const y = 50 + radius * Math.sin(radians);
+            
+            playerSpot.style.left = `${x}%`;
+            playerSpot.style.top = `${y}%`;
+            playerSpot.style.transform = 'translate(-50%, -50%)';
+            
+            // Special styling for current player (bottom position)
+            if (angle === 90) {
+                playerSpot.style.bottom = '10px';
+                playerSpot.style.left = '50%';
+                playerSpot.style.top = 'auto';
+                playerSpot.style.transform = 'translateX(-50%)';
+            }
+            
+            // Add default face down cards if this is not an empty hand update
+            const cardsContainer = playerSpot.querySelector('.player-cards');
+            
+            // Only add placeholder cards during the game
+            const gameIsActive = gameStatus.textContent !== 'Waiting for players...';
+            
+            if (gameIsActive && (!player.hand || player.hand.length === 0)) {
+                // Add placeholders for cards when in game but no cards received yet
+                for (let i = 0; i < 2; i++) { // 2 cards for Texas Hold'em
+                    const card = document.createElement('div');
+                    card.className = 'card facedown';
+                    card.textContent = '?';
+                    cardsContainer.appendChild(card);
+                }
+            }
+            
+            return playerSpot;
+        }
+
+        // Start the game
+        function startGame(data) {
+            console.log('Starting Texas Hold\'em game');
+            gameStatus.textContent = 'Game in progress...';
+            
+            // Log what we received
+            console.log("Game start data received:", data);
+            
+            // Reset community cards
+            communityCards.innerHTML = '';
+            for (let i = 0; i < 5; i++) {
+                const card = document.createElement('div');
+                card.className = 'card facedown';
+                card.textContent = '?';
+                communityCards.appendChild(card);
+            }
+            
+            // Ensure data has valid players
+            let players = [];
+            if (data && Array.isArray(data.players)) {
+                players = data.players;
+            } else if (data && data.players) {
+                // If data.players exists but is not an array
+                console.log('Player data exists but may have wrong format');
+                if (typeof data.players === 'object') {
+                    players = [data.players];
+                }
+            }
+            
+            if (players.length === 0) {
+                console.log('Warning: No player data available for game start');
+                playerPositions.innerHTML = '';
+                return;
+            }
+            
+            // Position players around the table
+            positionPlayers(players);
+            
+            // Update player information including hands
+            updatePlayers(players, true);
+            
+            // Update pot if provided
+            if (data && data.pot !== undefined) {
+                const potElement = document.querySelector('.pot');
+                if (potElement) {
+                    potElement.textContent = `Pot: $${data.pot}`;
+                }
+            }
+        }
+
+        // Handle showdown data
+        function handleShowdownData(data) {
+            if (!data || !data.hands) return;
+            
+            console.log('Showdown data received:', data);
+            showdownData = data;
+            
+            // Display all player hands and community cards
+            const players = data.hands;
+            
+            // Update community cards
+            if (data.communityCards) {
+                updateCommunityCards(data.communityCards);
+            }
+            
+            // Find highest ranked hand to identify winner(s)
+            let highestRank = [-1, -1, -1, -1, -1, -1];
+            
+            players.forEach(playerData => {
+                if (!playerData.handRank) return;
+                
+                const rank = [
+                    playerData.handRank[0], 
+                    playerData.handRank[1], 
+                    playerData.handRank[2], 
+                    playerData.handRank[3], 
+                    playerData.handRank[4], 
+                    playerData.handRank[5]
+                ];
+                
+                if (compareRanks(rank, highestRank) > 0) {
+                    highestRank = rank;
+                }
+            });
+            
+            // Now reveal all cards and highlight winners
+            const playerSpots = document.querySelectorAll('.player-spot');
+            
+            // Map player names to their DOM elements
+            const playerElements = {};
+            playerSpots.forEach(spot => {
+                const nameElement = spot.querySelector('.player-name');
+                if (nameElement) {
+                    playerElements[nameElement.textContent] = spot;
+                }
+            });
+            
+            // Update each player's cards and highlight winner(s)
+            players.forEach(playerData => {
+                const playerName = playerData.playerName || playerData.name;
+                const spot = playerElements[playerName];
+                
+                if (!spot) {
+                    console.log(`No DOM element found for player ${playerName}`);
+                    return;
+                }
+                
+                // Get the cards container
+                const cardsContainer = spot.querySelector('.player-cards');
+                if (!cardsContainer) return;
+                
+                // Clear existing cards
+                cardsContainer.innerHTML = '';
+                
+                // Add hand type indicator
+                const handTypeElement = document.createElement('div');
+                handTypeElement.className = 'hand-type';
+                handTypeElement.textContent = playerData.handName || 'Folded';
+                cardsContainer.appendChild(handTypeElement);
+                
+                // Display all cards face up
+                if (playerData.hand && playerData.hand.length) {
+                    playerData.hand.forEach(cardValue => {
+                        const card = document.createElement('div');
+                        card.className = `card ${getCardColor(cardValue)}`;
+                        card.textContent = cardToString(cardValue);
+                        cardsContainer.appendChild(card);
+                    });
+                }
+                
+                // Check if this player is a winner
+                const isWinner = playerData.winner || 
+                                (playerData.handRank && 
+                                compareRanks([playerData.handRank[0], playerData.handRank[1], playerData.handRank[2], 
+                                             playerData.handRank[3], playerData.handRank[4], playerData.handRank[5]], 
+                                            highestRank) === 0);
+                
+                if (isWinner) {
+                    spot.classList.add('winner');
+                    
+                    // Add winner indicator
+                    const winnerLabel = document.createElement('div');
+                    winnerLabel.className = 'winner-label';
+                    winnerLabel.textContent = 'WINNER!';
+                    spot.appendChild(winnerLabel);
+                }
+            });
+            
+            // Update game status
+            gameStatus.textContent = 'Showdown - Winner determined!';
+        }
+
+        // Update game state
+        function updateGameState(newGameState) {
+            console.log("Game state updated to:", newGameState);
+            
+            // If transitioning to JOINABLE (0), clear the game UI
+            if (newGameState === JOINABLE && gameState !== JOINABLE) {
+                // Reset all game elements
+                clearGameState();
+            }
+            
+            // Update the global game state
+            gameState = newGameState;
+            
+            // Update status text based on game state
+            updateGameStatusText(newGameState);
+        }
+        
+        // Update game status text based on state
+        function updateGameStatusText(state) {
+            switch(state) {
+                case JOINABLE:
+                    gameStatus.textContent = 'Waiting for players...';
+                    break;
+                case START_OF_ROUND:
+                    gameStatus.textContent = 'Starting new round...';
+                    break;
+                case ANTE:
+                    gameStatus.textContent = 'Collecting antes...';
+                    break;
+                case SMALL_AND_BIG_BLIND:
+                    gameStatus.textContent = 'Posting blinds...';
+                    break;
+                case DEAL_CARDS:
+                    gameStatus.textContent = 'Dealing cards...';
+                    break;
+                case BETTING_ROUND:
+                    gameStatus.textContent = 'Betting round';
+                    break;
+                case SHOWDOWN:
+                    gameStatus.textContent = 'Showdown!';
+                    break;
+                default:
+                    gameStatus.textContent = 'Game in progress...';
+            }
+        }
+        
+        // Clear game state and reset UI
+        function clearGameState() {
+            // Remove any active elements or highlights
+            document.querySelectorAll('.player-turn').forEach(el => el.classList.remove('player-turn'));
+            document.querySelectorAll('.winner').forEach(el => el.classList.remove('winner'));
+            document.querySelectorAll('.winner-label').forEach(el => el.remove());
+            document.querySelectorAll('.hand-type').forEach(el => el.remove());
+            
+            // Clear the game status
+            gameStatus.textContent = 'Waiting for players to ready up...';
+            
+            // Reset community cards to face down
+            communityCards.innerHTML = '';
+            for (let i = 0; i < 5; i++) {
+                const card = document.createElement('div');
+                card.className = 'card facedown';
+                card.textContent = '?';
+                communityCards.appendChild(card);
+            }
+            
+            // Reset pot
+            const potElement = document.querySelector('.pot');
+            if (potElement) {
+                potElement.textContent = 'Pot: $0';
+            }
+            
+            // Reset player spots
+            const playerSpots = document.querySelectorAll('.player-spot');
+            playerSpots.forEach(spot => {
+                // Reset player cards
+                const cardsContainer = spot.querySelector('.player-cards');
+                if (cardsContainer) {
+                    cardsContainer.innerHTML = '';
+                    
+                    // Add placeholder cards
+                    for (let i = 0; i < 2; i++) { // 2 cards for Texas Hold'em
+                        const card = document.createElement('div');
+                        card.className = 'card facedown';
+                        card.textContent = '?';
+                        cardsContainer.appendChild(card);
+                    }
+                }
+                
+                // Hide bet info
+                const betElement = spot.querySelector('.player-bet');
+                if (betElement) {
+                    betElement.style.display = 'none';
+                }
+                
+                // Remove player-turn highlight
+                spot.classList.remove('player-turn');
+                spot.classList.remove('player-folded');
+            });
+            
+            // Reset any game-specific flags
+            showdownData = null;
+        }
+
+        // Convert card value to string
+        function cardToString(cardValue) {
+            if (cardValue === undefined || cardValue === null) return '?';
+            
+            // Extract suit (0-3) and rank (0-12)
+            const suit = Math.floor(cardValue / 13);
+            const rank = cardValue % 13;
+            
+            // Rank symbols
+            const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+            
+            // Suit symbols
+            const suits = ['♠', '♥', '♦', '♣'];
+            
+            return ranks[rank] + suits[suit];
+        }
+
+        // Helper function to determine card color based on suit
+        function getCardColor(cardValue) {
+            if (cardValue === undefined || cardValue === null) return '';
+            
+            const suit = Math.floor(cardValue / 13);
+            // Hearts and diamonds are red, spades and clubs are black
+            return (suit === 1 || suit === 2) ? 'red-card' : 'black-card';
+        }
+
+        // Utility function to compare hand ranks
+        function compareRanks(rank1, rank2) {
+            for (let i = 0; i < 6; i++) {
+                if (rank1[i] > rank2[i]) return 1;
+                if (rank1[i] < rank2[i]) return -1;
+            }
+            return 0;
+        }
+    </script>
+</body>
+</html>

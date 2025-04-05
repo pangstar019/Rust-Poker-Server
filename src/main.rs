@@ -493,9 +493,9 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                                         //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
 
                                         // }
-                                        // lobby::TEXAS_HOLD_EM => {
-                                        //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
-                                        // }
+                                        lobby::TEXAS_HOLD_EM => {
+                                            result = games::texas_holdem_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
+                                        }
                                         _ => {
                                             continue;
                                         }

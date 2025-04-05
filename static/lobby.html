@@ -584,7 +584,7 @@
         }, 100);
       };
 
-      // Add this function to load the appropriate game iframe
+      // Replace or update your existing loadGameFrame function
       function loadGameFrame(gameType) {
         const gameFrame = document.getElementById("gameFrame");
         let gameUrl = "five_card.html"; // Default
@@ -597,23 +597,33 @@
         
         // Give a small delay before loading new content
         setTimeout(() => {
-          if (gameType.toLowerCase().includes("texas") || gameType.toLowerCase().includes("hold")) {
+          // First check if there's a direct match in our mapping
+          if (gameHtmlFiles[gameType]) {
+            gameUrl = gameHtmlFiles[gameType];
+            console.log(`Direct match found for game type: ${gameType} → ${gameUrl}`);
+          }
+          // Fallback to checking by keywords
+          else if (gameType.toLowerCase().includes("texas") || gameType.toLowerCase().includes("hold")) {
             gameUrl = "texas_holdem.html";
+            console.log(`Texas Hold'em detected from: ${gameType}`);
           } else if (gameType.toLowerCase().includes("7") || gameType.toLowerCase().includes("stud")) {
             gameUrl = "seven_card.html";
+            console.log(`7 Card Stud detected from: ${gameType}`);
           } else if (gameType.toLowerCase().includes("5") || gameType.toLowerCase().includes("draw")) {
             gameUrl = "five_card.html";
+            console.log(`5 Card Draw detected from: ${gameType}`);
           }
           
           console.log(`Loading game frame: ${gameUrl} for type: ${gameType}`);
-          // Load the file from /static/ directory instead of the root path
+          
+          // Load the file from /static/ directory
           gameFrame.src = `/static/${gameUrl}`;
           
           // Add event listener to detect load errors
           gameFrame.onerror = function() {
             console.error(`Failed to load game frame: ${gameUrl}`);
             document.getElementById("gameLoading").textContent = 
-              `Error loading game. Please refresh the page.`;
+              `Error loading game. Please refresh the page or try a different browser.`;
           };
           
           // Add onload handler to hide loading message
@@ -1171,6 +1181,19 @@
         
         console.log("Game ended");
       }
+
+      // Add this to your existing WebSocket onopen handler
+      socket.onopen = function(e) {
+        console.log("WebSocket connection established");
+        
+        // If we're in a lobby, request player list on connection/reconnection
+        if (window.location.pathname.includes("lobby") || 
+            window.location.pathname.endsWith("lobby.html")) {
+          setTimeout(() => {
+            sendToServer(JSON.stringify({ action: "ShowLobbyInfo" }));
+          }, 300);
+        }
+      };
     </script>
   </body>
 </html>

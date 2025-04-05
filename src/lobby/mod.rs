@@ -656,6 +656,41 @@ impl Lobby {
         }
         println!("players list with hands sent");
     }
+    
+    // Add this method to your Lobby impl
+    pub async fn reset_current_bets(&mut self) {
+        let mut players = self.players.lock().await;
+        for player in players.iter_mut() {
+            if player.state != player::FOLDED && player.state != player::ALL_IN {
+                player.current_bet = 0;
+                player.state = player::IN_GAME;
+            }
+        }
+        self.current_max_bet = 0;
+    }
+    
+    // Also add this method to help with game reset
+    pub async fn reset_game_for_new_round(&mut self) {
+        // Clear the community cards
+        self.community_cards.lock().await.clear();
+        
+        // Reset pot
+        self.pot = 0;
+        
+        // Reset current max bet
+        self.current_max_bet = 0;
+        
+        // Reset player states and bets
+        let mut players = self.players.lock().await;
+        for player in players.iter_mut() {
+            player.current_bet = 0;
+            player.hand.clear();
+            player.state = player::IN_LOBBY;
+        }
+        
+        // Move dealer position
+        self.first_betting_player = (self.first_betting_player + 1) % self.current_player_count;
+    }
 }
 
 
