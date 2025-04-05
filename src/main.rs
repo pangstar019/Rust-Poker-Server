@@ -489,9 +489,10 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                                         lobby::FIVE_CARD_DRAW => {
                                             result = games::five_card_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
                                         }
-                                        // lobby::SEVEN_CARD_STUD => {
-                                        //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
-
+                                        lobby::SEVEN_CARD_STUD => {
+                                            // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
+                                            result = games::seven_card_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
+                                        }
                                         // }
                                         // lobby::TEXAS_HOLD_EM => {
                                         //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;

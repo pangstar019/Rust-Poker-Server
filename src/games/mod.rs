@@ -1431,7 +1431,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
 /// 
 /// This function does not return a value. It updates the game state and player statistics.
 /// It also handles the display of game information to all players.
-pub async fn seven_card_game_state_machine(lobby: &mut Lobby) -> String {
+pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc<Database>) -> String {
     // Same structure updates as Texas Hold'em, adding check_for_spectators
     let mut betting_round_count = 1;
     let mut deal_card_counter = 1;
