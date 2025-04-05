@@ -1058,7 +1058,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                         if lobby_guard.current_player_turn == player_name{
                             match  lobby_guard.game_state {
                                 START_OF_ROUND => {
-                                    lobby_guard.first_betting_player = (lobby_guard.first_betting_player + 1) % lobby_guard.current_player_count;
                                     lobby_guard.game_state = ANTE;
                                     
                                     // Initialize turns counter for tracking player actions
@@ -1067,13 +1066,13 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                 }
                                 ANTE => {
                                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                                    // lobby_guard.broadcast("ANTE".to_string()).await;
                                     tx.send(Message::text(r#"{"message": "ANTE"}"#)).unwrap();
                                     println!("ante round message sent to player: {}", player_name);
                                     if player.wallet > 10 {
                                         // Deduct ante from player wallet and add to pot
                                         player.wallet -= 10;
                                         player.games_played += 1;
+                                        lobby_guard.update_player_stats(&player_name, player.wallet, player.games_played, player.games_won).await;
                                         lobby_guard.pot += 10;
                                     } else {
                                         // Not enough money, mark as folded
@@ -1081,7 +1080,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         player.state = FOLDED;
                                     }
                                     lobby_guard.turns_remaining -= 1;
-                                    lobby_guard.send_lobby_game_info().await;
                                     {
                                         let stats = db.player_stats(&player_name).await;
                                         if let Ok(stats) = stats {
@@ -1102,17 +1100,19 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         lobby_guard.game_state = DEAL_CARDS;
                                         lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                         lobby_guard.get_next_player(true).await;
-                                        println!("ante round complete, moving to deal cards\nCurrent player: {}", lobby_guard.current_player_turn);
+                                        println!("ante round complete, moving to deal cards");
                                     } else {
                                         lobby_guard.get_next_player(false).await;
                                     }
+                                    lobby_guard.send_lobby_game_info().await;
                                 }
                                 DEAL_CARDS => {
+                                    println!("current player: {}", lobby_guard.current_player_turn);
                                     // Deal 5 cards to each active player
                                     if player.hand.len() < 5 {
-                                        println!("Dealing card to player {}", player_name);
                                         player.hand.push(lobby_guard.deck.deal());
                                         lobby_guard.update_player_hand(&player_name, player.clone().hand).await;
+                                        lobby_guard.get_next_player(false).await;
                                     } else {
                                         lobby_guard.turns_remaining -= 1;
                                         if lobby_guard.turns_remaining == 0{

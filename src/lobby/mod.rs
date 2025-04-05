@@ -550,6 +550,7 @@ impl Lobby {
     }
     
     pub async fn setup_game(&mut self) {
+        self.first_betting_player = (self.first_betting_player + 1) % self.current_player_count;
         self.current_player_index = self.first_betting_player;
         self.current_player_turn = self.players.lock().await[self.first_betting_player as usize].name.clone();
         println!("current player turn: {}", self.current_player_turn);
@@ -595,6 +596,15 @@ impl Lobby {
             return true;
         }
         false
+    }
+
+    pub async fn update_player_stats(&self, player_name: &str, wallet: i32, games_played: i32, games_won: i32) {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
+            player.wallet = wallet;
+            player.games_played = games_played;
+            player.games_won = games_won;
+        }
     }
 
     pub async fn set_player_ready(&self, player_name: &str, ready_state: bool) {

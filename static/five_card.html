@@ -104,6 +104,19 @@
             border: 2px solid #f8c471;
         }
 
+        .player-turn {
+            background-color: rgba(61, 12, 82, 0.8);
+            box-shadow: 0 0 15px #9333ea;
+            border: 2px solid #9333ea;
+            animation: pulse-turn 2s infinite;
+        }
+
+        @keyframes pulse-turn {
+            0% { box-shadow: 0 0 15px #9333ea; }
+            50% { box-shadow: 0 0 25px #9333ea; }
+            100% { box-shadow: 0 0 15px #9333ea; }
+        }
+
         .player-name {
             font-weight: bold;
             color: #f8c471;
@@ -204,6 +217,27 @@
                 transform: translateY(0) scale(1);
             }
         }
+
+        /* Add this to your existing styles */
+        .wallet-decrease {
+            color: #ff4444;
+            animation: flash-decrease 0.8s;
+        }
+
+        .wallet-increase {
+            color: #44ff44;
+            animation: flash-increase 0.8s;
+        }
+
+        @keyframes flash-decrease {
+            0%, 100% { color: #bdc3c7; }
+            50% { color: #ff4444; }
+        }
+
+        @keyframes flash-increase {
+            0%, 100% { color: #bdc3c7; }
+            50% { color: #44ff44; }
+        }
     </style>
 </head>
 <body>
@@ -249,18 +283,24 @@
                 updatePlayers(data.data.players, data.data.gameActive);
             } else if (data.command === "startGame") {
                 startGame(data.data);
-            } else if (data.command === "gameInfo") {
+            } else if (data.command === "updateGameInfo") {
+                console.log("Game info received: ", data.data);
                 updateGameInfo(data.data);
             }
         }
 
         function updateGameInfo(data) {
-            if (data && data.pot) {
+            // Update pot value if provided
+            if (data && data.pot !== undefined) {
                 const potElement = document.querySelector('.pot');
                 if (potElement) {
                     potElement.textContent = `Pot: $${data.pot}`;
+                    console.log(`Updated pot to $${data.pot}`);
                 }
-            } else if (data && data.currentPlayerTurn) {
+            }
+            
+            // Update turn indicator if provided
+            if (data && data.currentPlayerTurn) {
                 // Remove turn highlight from all players
                 const allPlayerSpots = document.querySelectorAll('.player-spot');
                 allPlayerSpots.forEach(spot => {
@@ -269,14 +309,32 @@
                 
                 // Find the player whose turn it is and highlight them
                 const currentTurnPlayer = data.currentPlayerTurn;
+                let playerFound = false;
                 
                 allPlayerSpots.forEach(spot => {
                     const nameElement = spot.querySelector('.player-name');
                     if (nameElement && nameElement.textContent === currentTurnPlayer) {
                         spot.classList.add('player-turn');
-                        gameStatus.textContent = `${currentTurnPlayer}'s turn`;
+                        playerFound = true;
+                        
+                        // Update game status text
+                        const isCurrentUser = currentTurnPlayer === localStorage.getItem('currentPlayerName');
+                        if (isCurrentUser) {
+                            gameStatus.textContent = `Your turn!`;
+                        } else {
+                            gameStatus.textContent = `${currentTurnPlayer}'s turn`;
+                        }
                     }
                 });
+                
+                if (!playerFound) {
+                    console.log(`Could not find player spot for ${currentTurnPlayer}`);
+                }
+            }
+            
+            // Update game state if provided
+            if (data && data.gameState !== undefined) {
+                updateGameState(data.gameState);
             }
         }
         
@@ -321,10 +379,35 @@
                 const playerElement = playerElements[player.name];
                 if (!playerElement) return;
                 
-                // Update chips
+                // Update chips/wallet
                 const chipsElement = playerElement.querySelector('.player-chips');
                 if (chipsElement) {
-                    chipsElement.textContent = `$${player.chips || player.wallet || 1000}`;
+                    const walletAmount = player.chips || player.wallet || 1000;
+                    chipsElement.textContent = `$${walletAmount}`;
+                    
+                    // Add visual effect when wallet changes
+                    const currentAmount = parseInt(chipsElement.dataset.lastAmount || walletAmount);
+                    if (currentAmount !== walletAmount) {
+                        // Add a temporary class for animation
+                        if (currentAmount > walletAmount) {
+                            chipsElement.classList.add('wallet-decrease');
+                            setTimeout(() => chipsElement.classList.remove('wallet-decrease'), 1000);
+                        } else if (currentAmount < walletAmount) {
+                            chipsElement.classList.add('wallet-increase');
+                            setTimeout(() => chipsElement.classList.remove('wallet-increase'), 1000);
+                        }
+                        // Store new amount for next comparison
+                        chipsElement.dataset.lastAmount = walletAmount;
+                    }
+                }
+                
+                // Update player state (folded, etc.)
+                if (player.state !== undefined) {
+                    if (player.state === 1) { // FOLDED = 1
+                        playerElement.classList.add('player-folded');
+                    } else {
+                        playerElement.classList.remove('player-folded');
+                    }
                 }
             });
             
