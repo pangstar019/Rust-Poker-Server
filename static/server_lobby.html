@@ -87,25 +87,42 @@
       .modal {
         display: none;
         position: fixed;
-        z-index: 1;
+        z-index: 1000;
         left: 0;
         top: 0;
         width: 100%;
         height: 100%;
         background-color: rgba(0, 0, 0, 0.7);
+        align-items: center;
+        justify-content: center;
       }
       .modal-content {
         background-color: #34495e;
-        margin: 15% auto;
+        color: #ecf0f1;
+        margin: auto;
         padding: 20px;
+        border: 1px solid #3498db;
         border-radius: 5px;
-        width: 300px;
+        width: 50%;
+        max-width: 600px;
+      }
+      .user-manual-content {
+        width: 80%;
+        height: 80%;
+        max-width: 900px;
+      }
+      .user-manual-iframe {
+        width: 100%;
+        height: calc(100% - 60px);
+        border: none;
+        margin-top: 10px;
       }
       .close {
         color: #aaa;
         float: right;
         font-size: 28px;
         font-weight: bold;
+        cursor: pointer;
       }
       .close:hover,
       .close:focus {
@@ -148,6 +165,7 @@
     </div>
     <button onclick="openCreateLobbyModal()">Create Game Lobby</button>
     <button onclick="viewStats()">View Stats</button>
+    <button onclick="showUserManual()">Help</button>
 
     <div class="lobby-list">
       <div class="lobby-list-header">Available Game Lobbies</div>
@@ -173,6 +191,18 @@
         </div>
         <div id="createLobbyError" class="error-message"></div>
         <button onclick="submitCreateLobby()">Create Lobby</button>
+      </div>
+    </div>
+
+    <!-- User Manual Modal -->
+    <div id="userManualModal" class="modal">
+      <div class="modal-content user-manual-content">
+        <span class="close" onclick="closeUserManualModal()">&times;</span>
+        <h2>User Manual</h2>
+        <iframe id="userManualFrame" class="user-manual-iframe" src="/static/usermanual.pdf" onload="this.style.display='block'" onerror="handlePdfError()"></iframe>
+        <div id="pdfError" style="display:none; color:red; text-align:center; margin-top:20px;">
+          Cannot load the user manual PDF. Please make sure the file exists on the server.
+        </div>
       </div>
     </div>
 
@@ -342,10 +372,26 @@
         sendToServer(JSON.stringify({ action: "ShowStats" }));
       }
 
+      function showUserManual() {
+        document.getElementById("userManualModal").style.display = "flex";
+      }
+      
+      function closeUserManualModal() {
+        document.getElementById("userManualModal").style.display = "none";
+      }
+
+      function handlePdfError() {
+        document.getElementById('userManualFrame').style.display = 'none';
+        document.getElementById('pdfError').style.display = 'block';
+      }
+
       // Close modal if user clicks outside of it
       window.onclick = function (event) {
         if (event.target === createLobbyModal) {
           closeCreateLobbyModal();
+        }
+        if (event.target == document.getElementById("userManualModal")) {
+          closeUserManualModal();
         }
       };
     </script>
