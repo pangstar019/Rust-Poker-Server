@@ -1063,8 +1063,10 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     
                                     // Initialize turns counter for tracking player actions
                                     lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                    lobby_guard.send_lobby_game_info().await;
                                 }
                                 ANTE => {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                                     // lobby_guard.broadcast("ANTE".to_string()).await;
                                     tx.send(Message::text(r#"{"message": "ANTE"}"#)).unwrap();
                                     println!("ante round message sent to player: {}", player_name);
@@ -1079,6 +1081,23 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         player.state = FOLDED;
                                     }
                                     lobby_guard.turns_remaining -= 1;
+                                    lobby_guard.send_lobby_game_info().await;
+                                    {
+                                        let stats = db.player_stats(&player_name).await;
+                                        if let Ok(stats) = stats {
+                                            let stats_json = serde_json::json!({
+                                                "stats": {
+                                                    "username": player_name,
+                                                    "gamesPlayed": stats.games_played,
+                                                    "gamesWon": stats.games_won,
+                                                    "wallet": stats.wallet
+                                                }
+                                            });
+                                            tx.send(Message::text(stats_json.to_string())).unwrap();
+                                        } else {
+                                            tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
+                                        }
+                                    }
                                     if lobby_guard.turns_remaining == 0{
                                         lobby_guard.game_state = DEAL_CARDS;
                                         lobby_guard.turns_remaining = lobby_guard.current_player_count;
@@ -1089,19 +1108,19 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     }
                                 }
                                 DEAL_CARDS => {
-                                    
                                     // Deal 5 cards to each active player
                                     if player.hand.len() < 5 {
                                         println!("Dealing card to player {}", player_name);
                                         player.hand.push(lobby_guard.deck.deal());
                                         lobby_guard.update_player_hand(&player_name, player.clone().hand).await;
-                                        lobby_guard.display_hands().await;
                                     } else {
                                         lobby_guard.turns_remaining -= 1;
                                         if lobby_guard.turns_remaining == 0{
+                                            lobby_guard.send_player_list().await;
                                             lobby_guard.game_state = FIRST_BETTING_ROUND;
                                             lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                             lobby_guard.get_next_player(true).await;
+                                            println!("all cards dealt, moving to first betting round\nCurrent player: {}", lobby_guard.current_player_turn);
                                         } else {
                                             lobby_guard.get_next_player(false).await;
                                         }

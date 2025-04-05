@@ -514,14 +514,21 @@
           if (response.players) {
             console.log("Updating player list:", response.players);
             updatePlayerList(response.players);
-            
             // Check if all players are ready
-            checkAllPlayersReady(response.players);
+            if(!gameActive) {
+              checkAllPlayersReady(response.players);
+            }
           }
 
           // Handle lobby info
           if (response.lobbyInfo) {
             updateLobbyInfo(response.lobbyInfo);
+          }
+
+          if(response.gameInfo) {
+            console.log("Game info received:", response.gameInfo);
+            // Update game info in the iframe
+            sendGameCommand("updateGameInfo", response.gameInfo);
           }
 
           // Handle stats
@@ -551,7 +558,7 @@
         
         // Send player data to the game iframe
         console.log("Sending player data to game iframe:", players);
-        sendGameCommand("updatePlayers", { players: players });
+        sendGameCommand("updatePlayers", { players: players, gameActive: gameActive });
       }
       
       function checkAllPlayersReady(players) {
