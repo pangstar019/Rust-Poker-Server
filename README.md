@@ -1,32 +1,80 @@
-# ECE421-Project1
+# Poker WebSocket Server
 
-Requirements for Project 1:
+A real-time, multiplayer poker server built with Rust and WebSockets supporting 5 Card Draw, 7 Card Stud, and Texas Hold'em.
 
-Three Poker Game to implement:
-Poker Game #1: Standard five-card draw
-Poker Game #6: Badugi
-Poker Game #14: Texas Hold'em
+---
 
-# Dealer Requirements:
+## Features
+- **Three Poker Variants:**
+  - 5 Card Draw
+  - 7 Card Stud
+  - Texas Hold'em
+- **Real-Time Multiplayer:** WebSocket-based real-time communication.
+- **Lobby System:** Create, join, and manage private or public poker lobbies.
+- **Persistent Player Accounts:** Track player stats, chip balances, and game history with SQLite.
+- **Robust Game Logic:** Automated dealing, betting, and hand evaluation.
 
-High-Level Server Functional Requirements (S-FRs)
-* S-FR-1: Support multiple poker variants as listed in Table 1.
-* S-FR-2: Betting may be supported 
-* S-FR-3: Track statistics for each player.
-* S-FR-4: Provide player statistics on request. 
-* S-FR-5: Support 2 to 10 players per game (unless a variant supports a single player).
-* S-FR-6: Use a standard deck of 52 cards, including jokers when required by the variant. (Done)
-* S-FR-7: Ensure players have unique identifiers (IDs). (Done)
-* S-FR-8: Number each game sequentially starting from zero (0).
-* S-FR-9: Allow the game numbering to be reset to zero (0).
-* S-FR-10: Resetting the game numbering must clear retained player information.
+---
+
+## Technology Stack
+- **Rust** (Tokio async runtime)
+- **Warp Web Framework** (WebSocket support)
+- **SQLite** (via `sqlx` for persistent storage)
+- **Frontend && Backend** (Html,CSS,JS)
+- **JSON Messaging Protocol**
+
+---
+
+## Getting Started
+
+### Installation
+
+Clone the repository:
+```bash
+git clone https://github.com/" "/poker-ws-server.git
+cd src
+```
+
+Build the project:
+```bash
+cargo build --release
+```
+
+### Running the Server
+
+Launch the WebSocket server:
+```bash
+cargo run 
+```
+
+Server starts at:
+```
+ws://localhost:1112
+```
+
+---
+
+## How to Play
+
+Use any WebSocket-compatible client (e.g., browser app or CLI tool like `wscat`) to connect:
+```bash
+wscat -c ws://localhost:1112
+```
 
 
-High-Level Server Performance Requirements (S-PRs)
-* S-PR-1: Support at least three poker variants from Table 1 (e.g., Five-Card Draw, Texas Hold'em, Badugi).
-* S-PR-2: Assume clients have infinite funds or betting tokens for simplicity.
-* S-PR-3: Ensure player statistics are tracked across at least 100 server instances.
-* S-PR-4: Ensure player statistics can be reported across at least 100 server instances.
-* S-PR-5: Enable statistics to be reported by player ID.
-* S-PR-6: Allow statistics to be reported for a given player by game number.
-* S-PR-7: Allow clients to request results even if they are not actively playing.
+### Poker Variants
+
+- **5 Card Draw**: Classic draw poker with one discard phase.
+- **7 Card Stud**: Seven-card poker, with mixed face-up/down dealing.
+- **Texas Hold'em**: Popular community card poker game.
+
+
+## License
+
+Distributed under the **MIT License**. See `LICENSE` for details.
+
+---
+
+Enjoy the game!
+
+

@@ -295,16 +295,98 @@
         z-index: 1;
       }
 
-      /* Add this to your existing styles section */
-      .game-active .top-section {
-        display: none;
-      }
-
-      /* When game finishes, ensure panels are reset properly */
-      .game-finished .top-section {
+      .betting-controls {
         display: flex;
-        gap: 20px;
+        flex-direction: column;
+        padding: 15px;
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        margin-top: 15px;
+        width: 100%;
+      }
+      
+      .betting-info {
+        display: flex;
+        justify-content: space-between;
         margin-bottom: 15px;
+        padding: 10px;
+        background-color: rgba(0, 0, 0, 0.2);
+        border-radius: 5px;
+      }
+      
+      .info-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      .info-label {
+        font-size: 12px;
+        color: #bdc3c7;
+      }
+      
+      .info-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: #f8c471;
+      }
+      
+      .action-buttons {
+        display: flex;
+        justify-content: space-around;
+        gap: 8px;
+        margin-bottom: 15px;
+      }
+      
+      .action-btn {
+        flex: 1;
+        padding: 10px;
+        min-width: 70px;
+      }
+      
+      .action-btn.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      
+      .raise-controls {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 10px;
+        background-color: rgba(0, 0, 0, 0.2);
+        border-radius: 5px;
+      }
+      
+      #raiseSlider {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+      
+      .raise-amount-display {
+        font-size: 20px;
+        font-weight: bold;
+        color: #f8c471;
+        margin-bottom: 10px;
+      }
+      
+      .raise-buttons {
+        display: flex;
+        gap: 10px;
+        width: 100%;
+      }
+      
+      .confirm-btn, .cancel-btn {
+        flex: 1;
+        padding: 8px;
+      }
+      
+      .confirm-btn {
+        background-color: #27ae60;
+      }
+      
+      .cancel-btn {
+        background-color: #7f8c8d;
       }
     </style>
   </head>
@@ -375,11 +457,42 @@
       <div class="action-panel game-controls hidden" id="gameControls">
         <button onclick="showRules()" class="rules-btn">Rules</button>
         <button onclick="quitLobby()" class="quit-btn">Leave Game</button>
-        <button onclick="gameAction('Check')" class="action-btn">Check</button>
-        <button onclick="gameAction('Call')" class="action-btn">Call</button>
-        <button onclick="gameAction('Raise')" class="action-btn">Raise</button>
-        <button onclick="gameAction('FOLD')" class="action-btn">Fold</button>
-        <button onclick="gameAction('All_in')" class="action-btn">All In</button>
+        
+        <div id="bettingControls" class="betting-controls hidden">
+          <div class="betting-info">
+            <div class="info-item">
+              <span class="info-label">Your Chips:</span>
+              <span class="info-value" id="playerChips">$0</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">To Call:</span>
+              <span class="info-value" id="callAmount">$0</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Current Pot:</span>
+              <span class="info-value" id="currentPot">$0</span>
+            </div>
+          </div>
+          
+          <div class="action-buttons">
+            <button id="checkBtn" onclick="gameAction('Check')" class="action-btn">Check</button>
+            <button id="callBtn" onclick="gameAction('Call')" class="action-btn">Call</button>
+            <button id="foldBtn" onclick="gameAction('Fold')" class="action-btn">Fold</button>
+            <button id="allInBtn" onclick="gameAction('AllIn')" class="action-btn">All In</button>
+            <button id="raiseBtn" onclick="showRaiseControls()" class="action-btn">Raise</button>
+          </div>
+          
+          <div id="raiseControls" class="raise-controls hidden">
+            <input type="range" id="raiseSlider" min="1" max="100" value="10" oninput="updateRaiseAmount()">
+            <div class="raise-amount-display">
+              <span>$</span><span id="raiseAmount">10</span>
+            </div>
+            <div class="raise-buttons">
+              <button onclick="gameAction('Raise')" class="confirm-btn">Confirm Raise</button>
+              <button onclick="hideRaiseControls()" class="cancel-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -417,11 +530,25 @@
       const playerListContent = document.getElementById("playerListContent");
       const statsContent = document.getElementById("statsContent");
       const gameControls = document.getElementById("gameControls");
+      const bettingControls = document.getElementById("bettingControls");
+      const raiseControls = document.getElementById("raiseControls");
+      const raiseSlider = document.getElementById("raiseSlider");
+      const raiseAmountDisplay = document.getElementById("raiseAmount");
+
+      // Add these new variables at the top of your script section
+      let playerTurn = false;
+      let gameState = {
+        playerChips: 0,
+        callAmount: 0,
+        currentPot: 0,
+        canCheck: false,
+        canRaise: false
+      };
 
       // Update the game rule URLs to use Wikipedia
       const gameRuleUrls = {
         "5 Card Draw": "https://en.wikipedia.org/wiki/Five-card_draw",
-        "7 Card Stud": "https://en.wikipedia.org/wiki/Seven-card_stud",
+        "7 Card Stud": "https://en.wikipedia.org/wiki/Seven-card-stud",
         "Texas Hold'em": "https://en.wikipedia.org/wiki/Texas_hold_%27em"
       };
       
@@ -513,6 +640,7 @@
       }
     });
 
+      // Update the handleMessage function to detect player turn and betting state
       function handleMessage(data) {
         try {
           const response = JSON.parse(data);
@@ -545,15 +673,54 @@
             updateLobbyInfo(response.lobbyInfo);
           }
 
-          if(response.gameInfo) {
+          // Handle game info and player turn
+          if (response.gameInfo) {
             console.log("Game info received:", response.gameInfo);
-            // Update game info in the iframe
+            
+            // Update game state
+            if (response.gameInfo.pot !== undefined) {
+              gameState.currentPot = response.gameInfo.pot;
+              document.getElementById("currentPot").textContent = "$" + gameState.currentPot;
+            }
+            
+            // Check if it's this player's turn
+            const playerName = localStorage.getItem('currentPlayerName');
+            playerTurn = (response.gameInfo.currentPlayerTurn === playerName);
+            
+            // If it's the player's turn, update the betting controls
+            if (playerTurn) {
+              responseDiv.innerText = "It's your turn!";
+              
+              // Update betting info
+              gameState.callAmount = response.gameInfo.currentMaxBet || 0;
+              document.getElementById("callAmount").textContent = "$" + gameState.callAmount;
+              
+              // Show betting controls
+              document.getElementById("bettingControls").classList.remove("hidden");
+              
+              // Determine valid actions based on game state
+              updateValidActions();
+            } else {
+              // Hide betting controls when it's not player's turn
+              document.getElementById("bettingControls").classList.add("hidden");
+            }
+            
+            // Update game iframe
             sendGameCommand("updateGameInfo", response.gameInfo);
           }
 
-          // Handle stats
+          // Update player stats which includes wallet/chips
           if (response.stats) {
             updateStats(response.stats);
+            
+            // Update the player chips for betting controls
+            gameState.playerChips = response.stats.wallet;
+            document.getElementById("playerChips").textContent = "$" + gameState.playerChips;
+            
+            // Update valid actions based on new chip amount
+            if (playerTurn) {
+              updateValidActions();
+            }
           }
 
           // In your handleMessage function, add handling for showdownHands type
@@ -578,6 +745,19 @@
           }
         } catch (e) {
           console.error("Error parsing message:", e);
+          
+          // Check for non-JSON messages about turns
+          if (typeof data === 'string') {
+            if (data.includes("Your turn")) {
+              playerTurn = true;
+              document.getElementById("bettingControls").classList.remove("hidden");
+              responseDiv.innerText = data;
+              updateValidActions();
+            } else if (data.includes("betting round")) {
+              // Refresh game state when a betting round starts
+              sendToServer(JSON.stringify({ action: "ShowStats" }));
+            }
+          }
         }
       }
 
@@ -629,13 +809,18 @@
         lobbyControls.classList.add("hidden");
         gameControls.classList.remove("hidden");
         
-        // The top section with player list and stats will be hidden by CSS
+        // Hide betting controls initially - they'll show when it's the player's turn
+        document.getElementById("bettingControls").classList.add("hidden");
         
         // Send a message to the game iframe to start the game
         sendGameCommand("startGame", {
           players: players,
-          gameType: currentLobbyInfo.gameType
+          gameType: currentLobbyInfo.gameType,
+          pot: 0
         });
+        
+        // Get player stats to initialize chip count
+        refreshStats();
         
         console.log(`Game started: ${currentLobbyInfo.gameType}`);
       }
@@ -684,6 +869,7 @@
         debugLobbyInfo();
       }
 
+      // Update stats function to also update the betting chips display
       function updateStats(stats) {
         document.getElementById("gamesPlayed").textContent = stats.gamesPlayed;
         document.getElementById("gamesWon").textContent = stats.gamesWon;
@@ -695,6 +881,10 @@
             ? Math.round((stats.gamesWon / stats.gamesPlayed) * 100)
             : 0;
         document.getElementById("winRate").textContent = `${winRate}%`;
+        
+        // Update player chips for betting UI
+        gameState.playerChips = stats.wallet;
+        document.getElementById("playerChips").textContent = "$" + gameState.playerChips;
       }
 
       function readyUp() {
@@ -726,21 +916,136 @@
         sendToServer(JSON.stringify({ action: "UpdateInput" }));
       }
 
+      // Function to update which action buttons are valid
+      function updateValidActions() {
+        // Check if player can check (only if callAmount is 0)
+        gameState.canCheck = (gameState.callAmount === 0);
+        document.getElementById("checkBtn").disabled = !gameState.canCheck;
+        document.getElementById("checkBtn").classList.toggle("disabled", !gameState.canCheck);
+        
+        // Check if player can call (must have enough chips and there must be something to call)
+        const canCall = (gameState.callAmount > 0 && gameState.playerChips >= gameState.callAmount);
+        document.getElementById("callBtn").disabled = !canCall;
+        document.getElementById("callBtn").classList.toggle("disabled", !canCall);
+        
+        // Check if player can raise (must have enough chips to call plus more to raise)
+        gameState.canRaise = (gameState.playerChips > gameState.callAmount);
+        document.getElementById("raiseBtn").disabled = !gameState.canRaise;
+        document.getElementById("raiseBtn").classList.toggle("disabled", !gameState.canRaise);
+        
+        // Update raise slider limits if raising is possible
+        if (gameState.canRaise) {
+          const minRaise = Math.max(gameState.callAmount + 1, 1);
+          const maxRaise = gameState.playerChips;
+          
+          const raiseSlider = document.getElementById("raiseSlider");
+          raiseSlider.min = minRaise;
+          raiseSlider.max = maxRaise;
+          raiseSlider.value = minRaise;
+          document.getElementById("raiseAmount").textContent = minRaise;
+        }
+        
+        // Player can always fold
+        document.getElementById("foldBtn").disabled = false;
+        document.getElementById("foldBtn").classList.remove("disabled");
+        
+        // Player can go all-in if they have any chips
+        const canAllIn = (gameState.playerChips > 0);
+        document.getElementById("allInBtn").disabled = !canAllIn;
+        document.getElementById("allInBtn").classList.toggle("disabled", !canAllIn);
+        
+        // If player can't call the current bet but has chips, only allow fold or all-in
+        if (gameState.callAmount > gameState.playerChips && gameState.playerChips > 0) {
+          document.getElementById("checkBtn").disabled = true;
+          document.getElementById("checkBtn").classList.add("disabled");
+          document.getElementById("callBtn").disabled = true;
+          document.getElementById("callBtn").classList.add("disabled");
+          document.getElementById("raiseBtn").disabled = true;
+          document.getElementById("raiseBtn").classList.add("disabled");
+          
+          // Show a message that player can only fold or go all-in
+          responseDiv.innerText = "You don't have enough chips to call. You can fold or go all-in.";
+        }
+      }
+
+      // Show raise controls when the Raise button is clicked
+      function showRaiseControls() {
+        document.getElementById("raiseControls").classList.remove("hidden");
+        
+        // Set the initial raise amount
+        updateRaiseAmount();
+      }
+
+      // Hide raise controls
+      function hideRaiseControls() {
+        document.getElementById("raiseControls").classList.add("hidden");
+      }
+
+      // Update raise amount display when slider changes
+      function updateRaiseAmount() {
+        const value = document.getElementById("raiseSlider").value;
+        document.getElementById("raiseAmount").textContent = value;
+      }
+
+      // Update the gameAction function
       function gameAction(action) {
-        if (action === "Check" || action === "Call") {
-          // Check or Call action
-          sendToServer(JSON.stringify({ action: "Check" }));
-        } else if (action === "Raise") {
-          // Raise action, prompt for amount
-          const raiseAmount = prompt("Enter raise amount:");
-          if (raiseAmount) {
-            sendToServer(JSON.stringify({ action: action, amount: raiseAmount }));
+        let message;
+        let betAmount = 0;
+        if (action === "Check" && gameState.canCheck) {
+          message = { action: "Check" };
+        } else if (action === "Call") {
+          message = { action: "Call" };
+        } else if (action === "Fold") {
+          message = { action: "Fold" };
+        } else if (action === "AllIn") {
+          message = { action: "AllIn" };
+        } else if (action === "Raise" && gameState.canRaise) {
+          // Make sure we get a clean integer value
+          const amount = parseInt(document.getElementById("raiseAmount").textContent.trim(), 10);
+          console.log("Attempting to raise with amount:", amount);
+          
+          if (amount && amount <= gameState.playerChips && amount > gameState.callAmount) {
+            message = { 
+              action: "Raise", 
+              data: {amount: parseInt(amount)}  // Send as a number, not a string
+            };
+            // sendToServer(
+            //     JSON.stringify({
+            //       action: "Raise",
+            //       data: {
+            //         amount: parseInt(amount)
+            //       },
+            //     })
+            //   );        
+            hideRaiseControls();
+          } else {
+            responseDiv.innerText = "Invalid raise amount! Must be greater than current call amount.";
+            return;
           }
         } else {
-          // Other actions like Fold or All In
-          sendToServer(JSON.stringify({ action: "Fold" }));
+          responseDiv.innerText = "This action is not available right now.";
+          return;
         }
-        sendToServer(JSON.stringify({ action: action }));
+        // After sending action, disable all buttons to prevent multiple actions
+        document.querySelectorAll('.action-btn').forEach(btn => {
+          btn.disabled = true;
+          btn.classList.add('disabled');
+        });
+        
+        // Hide the raising controls if they're open
+        hideRaiseControls();
+        
+        // Hide betting controls after taking action
+        document.getElementById("bettingControls").classList.add("hidden");
+        
+        // Set playerTurn to false to indicate the player has taken their turn
+        playerTurn = false;
+        // if (action !== "Raise") {
+        // } else {
+          
+        // }
+        sendToServer(JSON.stringify(message));
+        responseDiv.innerText = `You chose to ${action}${action === "Raise" ? " to $" + message.amount : ""}`;
       }
 
       function showRules() {
@@ -774,7 +1079,7 @@
           }
           // Try 5 Card Draw with different variations
           else if (gameType.toLowerCase().includes("5") || gameType.toLowerCase().includes("draw")) {
-            ruleUrl = "https://en.wikipedia.org/wiki/Five-card_draw";
+            ruleUrl = "https://en.wikipedia.org/wiki/Five-card-draw";
             console.log("5 Card Draw variation detected");
           }
           else {
