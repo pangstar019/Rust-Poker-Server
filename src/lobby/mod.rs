@@ -559,6 +559,7 @@ impl Lobby {
         println!("lobby {} set up for startin game.", self.name);
     }
     
+    
     pub async fn update_db(&self) {
         // update the database with the new player stats
         let mut players = self.players.lock().await;

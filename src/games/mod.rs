@@ -1148,14 +1148,11 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                 //     lobby.broadcast(format!("Second betting round complete!\nCurrent pot: {}", lobby.pot)).await;
                                 //     lobby.game_state = SHOWDOWN;
                                 // }
-                                // SHOWDOWN => {
-                                //     lobby.broadcast("------Showdown Round!------".to_string()).await;
-                                //     showdown(lobby).await;
-                                //     lobby.game_state = END_OF_ROUND;
-                                // }
-                                // END_OF_ROUND => {
-                                //     lobby.game_state = UPDATE_DB;
-                                // }
+                                SHOWDOWN => {
+                                    lobby_guard.broadcast("------Showdown Round!------".to_string()).await;
+                                    // lobby_guard.showdown().await;
+                                    lobby_guard.game_state = UPDATE_DB;
+                                }
                                 UPDATE_DB => {
                                     lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
                                     lobby_guard.set_player_ready(&player_name, false).await;
