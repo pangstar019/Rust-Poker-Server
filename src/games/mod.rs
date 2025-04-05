@@ -51,15 +51,11 @@
 //! The module is designed to be used with a WebSocket server and uses async/await for concurrency.
 
 use super::*;
-use crate::Deck;
 use crate::lobby::Lobby;
-use crate::Player;
-use futures::future::join_all;
-use futures_util::future::{ready, Join};
-use sqlx::SqlitePool;
+use crate::player::Player;
 use std::sync::Arc;
-use tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex};
-use warp::{filters::ws::WebSocket, ws::Message};
+use tokio::sync::{mpsc::UnboundedSender, Mutex};
+use warp:: ws::Message;
 
 
 // Lobby attribute definitions
@@ -123,7 +119,7 @@ pub const NOT_SET: i32 = 13;
 /// This function does not return a value. It updates the players' hands and displays them to active players.
 async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
     let mut players = lobby.players.lock().await;
-    let mut count = 0;
+    let mut count;
     for player in players.iter_mut() {
         count = 0;
         loop {
@@ -445,32 +441,32 @@ pub async fn translate_card(card: i32) -> String {
         }
 
 
-    let mut cardStr: String = Default::default();
+    let mut card_str: String = Default::default();
     let rank: i32 = card % 13;
 
     if rank == 0 {
-        cardStr.push_str("Ace");
+        card_str.push_str("Ace");
     } else if rank <= 9 {
-        cardStr.push_str(&(rank + 1).to_string());
+        card_str.push_str(&(rank + 1).to_string());
     } else if rank == 10 {
-        cardStr.push_str("Jack");
+        card_str.push_str("Jack");
     } else if rank == 11 {
-        cardStr.push_str("Queen");
+        card_str.push_str("Queen");
     } else if rank == 12 {
-        cardStr.push_str("King");
+        card_str.push_str("King");
     }
 
     let suit: i32 = card / 13;
     if suit == 0 {
-        cardStr.push_str(" Hearts");
+        card_str.push_str(" Hearts");
     } else if suit == 1 {
-        cardStr.push_str(" Diamond");
+        card_str.push_str(" Diamond");
     } else if suit == 2 {
-        cardStr.push_str(" Spade");
+        card_str.push_str(" Spade");
     } else if suit == 3 {
-        cardStr.push_str(" Club");
+        card_str.push_str(" Club");
     }
-    return cardStr;
+    return card_str;
 }
 
 /// Displays the players' hands to all active players in the game.
@@ -843,7 +839,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
     {
         let mut lobby = player_lobby.lock().await;
         lobby.set_player_ready(&player_name, false).await;
-        lobby.update_player_state(&player_name, lobby::IN_LOBBY).await;
+        lobby.update_player_state(&player_name, player::IN_LOBBY).await;
         player.state = IN_LOBBY;
     }
     
@@ -943,14 +939,14 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     // Start the game
                                     println!("player: {}, received start game", player.name.clone());
                                     let mut started = false;
-                                    while (!started){
+                                    while !started {
                                         if let Ok(mut player_lobby_guard) = player_lobby.try_lock() {
                                             player_lobby_guard.turns_remaining -= 1;
                                             println!("turns remaining: {}", player_lobby_guard.turns_remaining);
                                             if player_lobby_guard.turns_remaining == 0 {
                                                 player_lobby_guard.setup_game().await;
                                             }
-                                            player_lobby_guard.update_player_state(&player_name, lobby::IN_GAME).await;
+                                            player_lobby_guard.update_player_state(&player_name, player::IN_GAME).await;
                                             player.state = IN_GAME;
                                             started = true;
                                         }
@@ -1043,8 +1039,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                     } else {
                                         lobby_guard.turns_remaining -= 1;
                                         if lobby_guard.turns_remaining == 0{
-                                            // lobby_guard.game_state = FIRST_BETTING_ROUND;
-                                            lobby_guard.game_state = DRAW;
+                                            lobby_guard.game_state = FIRST_BETTING_ROUND;
                                             lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                             lobby_guard.get_next_player(true).await;
                                             lobby_guard.send_player_list().await;
@@ -1256,7 +1251,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                                 lobby_guard.turns_remaining -= 1;
                                                                 if lobby_guard.turns_remaining == 0 {
                                                                     // All players have completed their draws
-                                                                    // lobby_guard.game_state = SECOND_BETTING_ROUND;
                                                                     lobby_guard.game_state = SHOWDOWN;
                                                                     lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                                                     lobby_guard.get_next_player(true).await;
@@ -1347,7 +1341,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         // Reset player ready status
                                         lobby_guard.set_player_ready(&player_name, false).await;
                                         // Reset player state to IN_LOBBY
-                                        lobby_guard.update_player_state(&player_name, lobby::IN_LOBBY).await;
+                                        lobby_guard.update_player_state(&player_name, player::IN_LOBBY).await;
                                     }
                                     
                                     // Send game end notification to all clients
@@ -1498,8 +1492,7 @@ pub async fn seven_card_game_state_machine(lobby: &mut Lobby) -> String {
             UPDATE_DB => {
                 lobby.pot = 0;
                 lobby.update_db().await;
-                
-                
+                lobby.reset_ready().await;
                 break;
             }
             _ => {

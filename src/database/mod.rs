@@ -8,7 +8,7 @@
 //! 
 //! It uses `sqlx` for asynchronous database interactions and `uuid` for unique player IDs.
 
-use crate::lobby::Player;
+use crate::player::Player;
 use sqlx::{SqlitePool, Row};
 use uuid::Uuid;
 use std::sync::Arc;
@@ -16,7 +16,6 @@ use std::sync::Arc;
 /// Represents a player's statistics, including games played, games won, and wallet balance.
 #[derive(Debug)]
 pub struct PlayerStats {
-    pub id: String,
     pub name: String,
     pub games_played: i32,
     pub games_won: i32,
@@ -78,7 +77,7 @@ impl Database {
             Some(row) => {
                 let logged_in: bool = row.try_get("logged_in")?;
                 
-                if (logged_in) {
+                if logged_in {
                     // Player is already logged in
                     Ok(None) // Return None to indicate login failure
                 } else {
@@ -138,7 +137,6 @@ impl Database {
             games_played: row.get(0),
             games_won: row.get(1),
             wallet: row.get(2),
-            id: Uuid::new_v4().to_string(),
             name: username.to_string(),
         })
     }

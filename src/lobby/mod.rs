@@ -32,19 +32,6 @@ pub const SHOWDOWN: i32 = 7;
 pub const END_OF_ROUND: i32 = 8;
 const UPDATE_DB: i32 = 9;
 
-// Player state definitions
-pub const READY: i32 = 0;
-const FOLDED: i32 = 1;
-const ALL_IN: i32 = 2;
-const CHECKED: i32 = 3;
-const CALLED: i32 = 4;
-const RAISED: i32 = 8;
-pub const IN_LOBBY: i32 = 5;
-pub const IN_SERVER: i32 = 6;
-pub const IN_GAME: i32 = 7;
-pub const LOGGING_IN: i32 = 8;
-pub const SPECTATOR: i32 = 9;
-
 // Method return defintions
 pub const SUCCESS: i32 = 100;
 pub const FAILED: i32 = 101;
@@ -59,61 +46,7 @@ pub const TEXAS_HOLD_EM: i32 = 12;
 pub const NOT_SET: i32 = 13;
 
 
-// Define Player struct
-#[derive(Clone)]
-pub struct Player {
-    pub name: String,
-    pub id: String,
-    pub hand: Vec<i32>,
-    pub wallet: i32,
-    pub tx: mpsc::UnboundedSender<Message>,
-    pub rx: Arc<Mutex<SplitStream<warp::ws::WebSocket>>>,
-    pub state: i32,
-    pub current_bet: i32,
-    pub ready: bool,
-    pub games_played: i32,
-    pub games_won: i32,
-    pub lobby: Arc<Mutex<Lobby>>,
-}
 
-impl Player {
-    pub async fn player_join_lobby(
-        &mut self,
-        server_lobby: Arc<Mutex<Lobby>>,
-        lobby_name: String,
-        spectate: bool
-    ) -> i32 {
-        let lobbies = server_lobby.lock().await.lobbies.lock().await.clone();
-        
-        for lobby in lobbies {
-            // First try with a non-blocking lock
-            if let Ok(mut lobby_guard) = lobby.try_lock() {
-                if lobby_guard.name == lobby_name {
-                    if spectate {
-                        // Join as spectator
-                        self.state = SPECTATOR;
-                        lobby_guard.add_spectator(self.clone()).await;
-                        self.lobby = lobby.clone();
-                        return SUCCESS;
-                    } else {
-                        // Check if game is in progress
-                        if lobby_guard.game_state >= START_OF_ROUND && 
-                           lobby_guard.game_state <= END_OF_ROUND {
-                            // Can't join as player during game
-                            return FAILED;
-                        }
-                        
-                        // Join as regular player
-                        lobby_guard.add_player(self.clone()).await;
-                        self.lobby = lobby.clone();
-                        return SUCCESS;
-                    }
-                }
-            }
-        }
-        FAILED
-    }
-}
 
 #[derive(Clone)]
 pub struct Lobby {
@@ -185,7 +118,7 @@ impl Lobby {
     pub async fn add_player(&mut self, mut player: Player) {
         {
             let mut players = self.players.lock().await;
-            player.state = IN_LOBBY;
+            player.state = player::IN_LOBBY;
             players.push(player);
         } // Release the immutable borrow of self.players here
         
@@ -373,28 +306,6 @@ impl Lobby {
         false
     }
 
-    pub async fn get_lobby(&self, lobby_name: String) -> Option<Arc<Mutex<Lobby>>> {
-        let lobbies = self.lobbies.lock().await;
-        for lobby in lobbies.iter() {
-            if let Ok(lobby_guard) = lobby.try_lock() {
-                if lobby_guard.name == lobby_name {
-                    return Some(lobby.clone());
-                }
-            }
-        }
-        None
-    }
-
-    pub async fn get_player(&self, username: &String) -> Option<Player> {
-        let players = self.players.lock().await;
-        for player in players.iter() {
-            if player.name == *username {
-                return Some(player.clone());
-            }
-        }
-        None
-    }
-
     pub async fn get_player_names_and_status(&self) -> Vec<(String, bool)> {
         let players = self.players.lock().await;
         players.iter()
@@ -402,13 +313,6 @@ impl Lobby {
             .collect()
     }
 
-    pub async fn broadcast_json(&self, message: String) {
-        // Iterate through all players and send the message to each one
-        let players = self.players.lock().await;
-        for player in players.iter() {
-            let _ = player.tx.send(warp::ws::Message::text(message.clone()));
-        }
-    }
     pub async fn broadcast(&self, message: String) {
         
         // Check if the message is already valid JSON, otherwise format it
@@ -479,7 +383,7 @@ impl Lobby {
         let mut players = self.players.lock().await;
         for player in players.iter_mut() {
             player.ready = false;
-            player.state = IN_LOBBY;
+            player.state = player::IN_LOBBY;
         }
     }
     
@@ -524,7 +428,7 @@ impl Lobby {
         let mut winning_players_indices: Vec<i32> = Vec::new();
         let mut player_hand_type: (i32, i32, i32, i32, i32, i32);
         for player in players.iter_mut() {
-            if player.state == FOLDED {
+            if player.state == player::FOLDED {
                 continue;
             };
             let player_hand = player.hand.clone();
@@ -629,7 +533,7 @@ impl Lobby {
             self.current_player_index = (self.current_player_index + 1) % self.current_player_count;
         }
         loop{
-            if self.players.lock().await[self.current_player_index as usize].state != FOLDED {
+            if self.players.lock().await[self.current_player_index as usize].state != player::FOLDED {
                 self.current_player_turn = self.players.lock().await[self.current_player_index as usize].name.clone();
                 return;
             } else {
@@ -643,39 +547,6 @@ impl Lobby {
         if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
             player.hand = hand;
         }
-    }
-
-    pub async fn display_hands(&self) {
-        let mut hands_data = Vec::new();
-        {
-            let players = self.players.lock().await;
-            // Collect all player hands
-            for player in players.iter() {
-                // Create a JSON structure for each player's hand
-                let hand_obj = serde_json::json!({
-                    "playerName": player.name,
-                    "hand": player.hand,
-                    "state": player.state  // Include state to check if player folded
-                });
-                
-                hands_data.push(hand_obj);
-            }
-        }
-        
-        // Create the complete hands update message
-        let hands_message = serde_json::json!({
-            "type": "handsUpdate",
-            "hands": hands_data
-        });
-        
-        // Convert to string
-        let hands_json = hands_message.to_string();
-        
-        // Broadcast to all players
-        self.broadcast(hands_json).await;
-        
-        // Log for debugging
-        println!("Broadcasted hand information to all players");
     }
     
     /// Sends the current lobby information to the client.
@@ -759,7 +630,7 @@ impl Lobby {
                         "name": name,
                         "ready": ready,
                         "hand": Vec::<i32>::new(),
-                        "state": lobby::IN_LOBBY
+                        "state": player::IN_LOBBY
                     }));
                 }
             }
@@ -778,7 +649,6 @@ impl Lobby {
         }
         println!("players list with hands sent");
     }
-
 }
 
 

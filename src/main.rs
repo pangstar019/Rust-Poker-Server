@@ -49,10 +49,11 @@ mod database;
 mod deck;
 mod lobby;
 mod games;
+mod player;
 
+use crate::player::Player;
 use futures_util::stream::SplitStream;
 use futures_util::{StreamExt, SinkExt};
-use rand::seq::index;
 use warp::Filter;
 use warp::ws::{Message, WebSocket};
 use std::sync::Arc;
@@ -60,7 +61,6 @@ use database::Database;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 use tokio::sync::{mpsc, Mutex};
-use tokio::time::{sleep, Duration};
 use lobby::*;
 use deck::Deck;
 
@@ -172,7 +172,6 @@ async fn main() -> std::io::Result<()> {
 async fn initialize_db() -> SqlitePool {
     use std::path::Path;
     use std::fs;
-    use std::io::Write;
     
     let db_path = "poker.db";
     let schema_sql = r#"
@@ -299,14 +298,14 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
         }
     });
     
-    let mut curr_player = Player {
+    let curr_player = Player {
         name: "".to_string(),
         id: "".to_string(),
         hand: Vec::new(),
         wallet: 0,
         tx: tx.clone(),
         rx: Arc::new(Mutex::new(ws_rx)),
-        state: lobby::LOGGING_IN,
+        state: player::LOGGING_IN,
         current_bet: 0,
         ready: false,
         games_played: 0,
@@ -322,7 +321,7 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
     
     // If login was successful, proceed to server lobby
     if let Some(player) = logged_in_player {
-        if player.state == lobby::IN_SERVER {
+        if player.state == player::IN_SERVER {
             println!("Player logged in successfully.");
             handle_server_lobby(player.clone(), server_lobby, db.clone()).await;
         }
@@ -355,7 +354,7 @@ async fn handle_login_phase(mut player: Player, db: Arc<Database>, server_lobby:
                             player.name = username.clone();
                             player.id = _id.to_string();
                             player.wallet = db.get_player_wallet(&username).await.unwrap_or(1000) as i32;
-                            player.state = lobby::IN_SERVER;
+                            player.state = player::IN_SERVER;
                             player.lobby = server_lobby.clone();
                             
                             // Add player to server lobby
@@ -379,7 +378,7 @@ async fn handle_login_phase(mut player: Player, db: Arc<Database>, server_lobby:
                             player.name = username.clone();
                             player.id = Uuid::new_v4().to_string();
                             player.wallet = 1000;
-                            player.state = lobby::IN_SERVER;
+                            player.state = player::IN_SERVER;
                             player.lobby = server_lobby.clone();
                             
                             // Add player to server lobby
@@ -551,161 +550,6 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                     }
                     _ => {
                         // For unsupported actions: disregard
-                        continue;
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Handles a player joining a lobby.
-/// 
-/// This function is called when a player joins a lobby and is responsible for processing
-/// the player's input and sending messages back to the client.
-/// 
-/// # Arguments
-/// 
-/// * `server_lobby` - The server lobby containing all players and lobbies.
-/// * `player` - The player joining the lobby.
-/// * `db` - The database connection pool.
-/// 
-/// # Returns
-/// 
-/// This function returns a `String` indicating the exit status of the player.
-async fn join_lobby(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: Arc<Database>) -> String {
-    let player_name = player.name.clone();
-    let player_lobby = player.lobby.clone();
-    let tx = player.tx.clone();
-    
-    // Update player state through the lobby
-    {
-        let mut lobby = player_lobby.lock().await;
-        lobby.set_player_ready(&player_name, false).await;
-        lobby.update_player_state(&player_name, lobby::IN_LOBBY).await;
-    }
-    
-    println!("{} has joined lobby: {}", player_name, player_lobby.lock().await.name);
-    
-    // Send initial lobby information
-    player_lobby.lock().await.send_lobby_info().await;
-    player_lobby.lock().await.send_player_list().await;
-    
-    loop {
-        let result = {
-            // Get next message from the player's websocket
-            let mut rx = player.rx.lock().await;
-            match rx.next().await {
-                Some(res) => res,
-                None => continue,
-            }
-        };
-        
-        if let Ok(msg) = result {
-            if let Ok(text) = msg.to_str() {
-                // Parse the incoming JSON message
-                let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
-                
-                let lobby_name = player_lobby.lock().await.name.clone();
-
-                match client_msg {
-                    Ok(ClientMessage::Quit) => {
-                        // // QUIT LOBBY - Return to server lobby
-                        // let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
-                        // if lobby_status == lobby::GAME_LOBBY_EMPTY {
-                        //     server_lobby.lock().await.remove_lobby(lobby_name).await;
-                        // } else {
-                        //     server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
-                        // }
-                        // server_lobby.lock().await.broadcast_player_count().await;
-                        // send_lobby_info(&player_lobby).await;
-                        // send_player_list(&player_lobby).await;
-                        
-                        // // Send redirect back to server lobby
-                        // tx.send(Message::text(r#"{"message": "Leaving lobby...", "redirect": "server_lobby"}"#)).unwrap();
-                        // return "Normal".to_string();
-
-                        player_lobby.lock().await.game_state = lobby::END_OF_ROUND;
-                        println!("player {} chnaged lobby state to {}", player_name, player_lobby.lock().await.game_state);
-                    }
-                    Ok(ClientMessage::Disconnect) => {
-                        // Player disconnected entirely
-                        let _ = db.logout_player(&player_name).await;
-                        let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
-                        if lobby_status == lobby::GAME_LOBBY_EMPTY {
-                            server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
-                        } else {
-                            server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
-                        }
-                        server_lobby.lock().await.broadcast_player_count().await;
-                        player_lobby.lock().await.send_lobby_info().await;
-                        player_lobby.lock().await.send_player_list().await;
-
-                        server_lobby.lock().await.remove_player(player_name.clone()).await;
-                        server_lobby.lock().await.broadcast_player_count().await;
-                        
-                        // Update player stats from database
-                        let player_data = player_lobby.lock().await.get_player_by_name(&player_name).await;
-                        if let Some(player_data) = player_data {
-                            if let Err(e) = db.update_player_stats(&player_data).await {
-                                eprintln!("Failed to update player stats: {}", e);
-                            }
-                        }
-                        
-                        return "Disconnect".to_string();
-                    }
-                    Ok(ClientMessage::ShowLobbyInfo) => {
-                        player_lobby.lock().await.send_lobby_info().await;
-                        player_lobby.lock().await.send_player_list().await;
-                    }
-                    Ok(ClientMessage::Ready) => {
-                        // READY UP - through the lobby
-                        player_lobby.lock().await.check_ready(player_name.clone()).await;                    
-                        
-                        // Update all clients with the new player list
-                        player_lobby.lock().await.send_player_list().await;
-                        println!("for player {}, lobby state is {}", player_name, player_lobby.lock().await.game_state);
-                    }
-                    Ok(ClientMessage::ShowStats) => {
-                        // Get player stats from database
-                        let stats = db.player_stats(&player_name).await;
-                        
-                        if let Ok(stats) = stats {
-                            println!("Retrieved stats for {}: {:?}", player_name, stats);
-                            // Format stats as JSON and send to client
-                            let stats_json = serde_json::json!({
-                                "stats": {
-                                    "username": stats.name,
-                                    "gamesPlayed": stats.games_played,
-                                    "gamesWon": stats.games_won,
-                                    "wallet": stats.wallet,
-                                    "winRate": if stats.games_played > 0 {
-                                        format!("{}%", (stats.games_won as f64 / stats.games_played as f64) * 100.0)
-                                    } else {
-                                        "N/A".to_string()
-                                    }
-                                }
-                            });
-                            tx.send(Message::text(stats_json.to_string())).unwrap();
-                        } else {
-                            println!("Error retrieving stats for {}: {:?}", player_name, stats);
-                            tx.send(Message::text(r#"{"error": "Failed to retrieve stats"}"#)).unwrap();
-                        }
-                    }
-                    Ok(ClientMessage::StartGame) => {
-                        // Start the game
-                        println!("player: {}, received start game", player.name.clone());
-                        
-                        // Extract the necessary information without holding the lock
-                        let game_type = player_lobby.lock().await.game_type.clone();
-                        
-                        
-                        
-                        
-                        
-                    }
-                    _ => {
-                        // Unsupported action in lobby: disregard
                         continue;
                     }
                 }
