@@ -538,7 +538,7 @@ impl Lobby {
             player.ready = false;
         }
     }
-
+    
     async fn change_player_state(&self, state: i32) {
         // loop through players and change their state
         let mut players = self.players.lock().await;
@@ -548,7 +548,7 @@ impl Lobby {
             player.hand.clear();
         }
     }
-
+    
     pub async fn setup_game(&mut self) {
         self.current_player_index = self.first_betting_player;
         self.current_player_turn = self.players.lock().await[self.first_betting_player as usize].name.clone();
@@ -557,7 +557,7 @@ impl Lobby {
         self.deck.shuffle();
         println!("lobby {} set up for startin game.", self.name);
     }
-
+    
     pub async fn update_db(&self) {
         // update the database with the new player stats
         let mut players = self.players.lock().await;
@@ -576,7 +576,7 @@ impl Lobby {
             .execute(&self.game_db)
             .await
             .unwrap();
-    
+        
             player.games_played = 0;
             player.games_won = 0;
         }
@@ -586,7 +586,7 @@ impl Lobby {
         let players = self.players.lock().await;
         players.iter().find(|p| p.name == player_name).cloned()
     }
-    
+
     /// Updates a player's state in this lobby
     pub async fn update_player_state(&mut self, player_name: &str, new_state: i32) -> bool {
         let mut players = self.players.lock().await;
@@ -603,8 +603,8 @@ impl Lobby {
             player.ready = ready_state;
         }
     }
-
-
+    
+    
     pub async fn get_next_player(&mut self, reset: bool) {
         if reset{
             self.current_player_index = self.first_betting_player;
@@ -620,7 +620,7 @@ impl Lobby {
             }
         }
     }
-
+    
     pub async fn update_player_hand(&mut self, player_name: &str, hand: Vec<i32>) {
         let mut players = self.players.lock().await;
         if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
@@ -629,19 +629,20 @@ impl Lobby {
     }
 
     pub async fn display_hands(&self) {
-        let players = self.players.lock().await;
         let mut hands_data = Vec::new();
-        
-        // Collect all player hands
-        for player in players.iter() {
-            // Create a JSON structure for each player's hand
-            let hand_obj = serde_json::json!({
-                "playerName": player.name,
-                "hand": player.hand,
-                "state": player.state  // Include state to check if player folded
-            });
-            
-            hands_data.push(hand_obj);
+        {
+            let players = self.players.lock().await;
+            // Collect all player hands
+            for player in players.iter() {
+                // Create a JSON structure for each player's hand
+                let hand_obj = serde_json::json!({
+                    "playerName": player.name,
+                    "hand": player.hand,
+                    "state": player.state  // Include state to check if player folded
+                });
+                
+                hands_data.push(hand_obj);
+            }
         }
         
         // Create the complete hands update message
@@ -659,7 +660,7 @@ impl Lobby {
         // Log for debugging
         println!("Broadcasted hand information to all players");
     }
-
+    
     /// Sends the current lobby information to the client.
     pub async fn send_lobby_info(&self) {
         // Get lobby information
@@ -677,7 +678,6 @@ impl Lobby {
             lobby::TEXAS_HOLD_EM => 10,
             _ => 10
         };
-        
         // Create JSON response
         let lobby_info = serde_json::json!({
             "lobbyInfo": {
@@ -693,6 +693,26 @@ impl Lobby {
         for tx in player_tx {
             // Send lobby information to all players in the lobby
             tx.send(Message::text(lobby_info.to_string())).unwrap();
+        }
+    }
+    
+    pub async fn send_lobby_game_info(&self){
+        // Create JSON response
+        let game_info = serde_json::json!({
+            "gameInfo": {
+                "gameState": self.game_state,
+                "pot": self.pot,
+                "currentMaxBet": self.current_max_bet,
+                "communityCards": self.community_cards.lock().await.clone(),
+                "currentPlayerTurn": self.current_player_turn,
+            }
+        });
+        
+        let players = self.players.lock().await;
+        let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+        for tx in player_tx {
+            // Send game information to all players in the lobby
+            tx.send(Message::text(game_info.to_string())).unwrap();
         }
     }
 
@@ -741,6 +761,7 @@ impl Lobby {
         }
         println!("players list with hands sent");
     }
+
 }
 
 
