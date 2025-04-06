@@ -792,6 +792,7 @@ fn hand_type_to_string(hand_type: i32) -> String {
 pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc<Database>) -> String {
     let player_name = player.name.clone();
     let player_lobby = player.lobby.clone();
+    let lobby_name = player_lobby.lock().await.name.clone();
     let tx = player.tx.clone();
     
     // Update player state through the lobby
@@ -839,7 +840,6 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                             // Parse the incoming JSON message
                             let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
                             
-                            let lobby_name = player_lobby.lock().await.name.clone();
             
                             match client_msg {
                                 Ok(ClientMessage::Quit) => {
@@ -914,19 +914,15 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                 Ok(ClientMessage::StartGame) => {
                                     // Start the game
                                     println!("player: {}, received start game", player.name.clone());
-                                    let mut started = false;
-                                    while !started {
-                                        if let Ok(mut player_lobby_guard) = player_lobby.try_lock() {
-                                            player_lobby_guard.turns_remaining -= 1;
-                                            println!("turns remaining: {}", player_lobby_guard.turns_remaining);
-                                            if player_lobby_guard.turns_remaining == 0 {
-                                                player_lobby_guard.setup_game().await;
-                                            }
-                                            player.state = player::IN_GAME;
-                                            started = true;
-                                        }
+                                    let mut player_lobby_guard = player_lobby.lock().await;
+                                    player_lobby_guard.turns_remaining -= 1;
+                                    println!("turns remaining: {}", player_lobby_guard.turns_remaining);
+                                    if player_lobby_guard.turns_remaining == 0 {
+                                        player_lobby_guard.setup_game().await;
                                     }
+                                    player.state = player::IN_GAME;
                                     break;
+                                    
                                 }
                                 _ => {
                                     continue;
@@ -1333,31 +1329,41 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                             // Parse the incoming JSON message
                             let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
                             match client_msg {
-
-                                /*
-                                Need to integrate with game logic so the indexing will work
-                                also need to update DB for player in-game wallet/games_played
-                                 */
                                 Ok(ClientMessage::Disconnect) => {
                                     // Player disconnected entirely
-                                    let lobby_name = player_lobby.lock().await.name.clone();
-                                    let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
-                                    if lobby_status == lobby::GAME_LOBBY_EMPTY {
-                                        server_lobby.lock().await.remove_lobby(lobby_name.clone()).await;
-                                    } else {
-                                        server_lobby.lock().await.update_lobby_names_status(lobby_name).await;
-                                    }
-                                    server_lobby.lock().await.broadcast_player_count().await;
-                                    player_lobby.lock().await.send_lobby_info().await;
-                                    player_lobby.lock().await.send_player_list().await;
+                                    {
+                                        let mut lobby_guard = player_lobby.lock().await;
+                                        // Add to the to_be_deleted list
+                                        // Update player state to folded if in a game
+                                        if !lobby_guard.to_be_deleted.contains(&player_name) {
+                                            lobby_guard.to_be_deleted.push(player_name.clone());
+                                        }
+                                        lobby_guard.update_player_state(&player_name, player::FOLDED).await;
+                                        
+                                        // Mark player as disconnected for UI display
+                                        let mut players = lobby_guard.players.lock().await;
+                                        if let Some(p) = players.iter_mut().find(|p| p.name == player_name) {
+                                            p.disconnected = true;
+                                        }
+                                        
+                                        // Notify other players
+                                        let disconnect_msg = serde_json::json!({
+                                            "message": format!("{} has disconnected and folded.", player_name),
+                                            "playerDisconnected": {
+                                                "name": player_name,
+                                                "state": player::FOLDED
+                                            }
+                                        });
+                                        lobby_guard.broadcast_json(disconnect_msg.to_string()).await;
 
-                                    server_lobby.lock().await.remove_player(player_name.clone()).await;
-                                    server_lobby.lock().await.broadcast_player_count().await;
-                                    
-                                    // Update player stats from database
+                                        lobby_guard.send_lobby_game_info().await;
+                                        lobby_guard.send_player_list().await;
+                                    }
+
                                     if let Err(e) = db.update_player_stats(&player).await {
                                         eprintln!("Failed to update player stats: {}", e);
                                     }
+
                                     
                                     return "Disconnect".to_string();
                                 }

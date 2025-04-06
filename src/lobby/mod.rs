@@ -60,6 +60,8 @@ pub struct Lobby {
     pub name: String,
     // Use Arc<Mutex<...>> so the Lobby struct can #[derive(Clone)]
     pub players: Arc<Mutex<Vec<Player>>>,
+    pub spectators: Arc<Mutex<Vec<Player>>>,
+    pub to_be_deleted: Vec<String>,
     pub lobbies: Arc<Mutex<Vec<Arc<Mutex<Lobby>>>>>,
     pub lobby_names_and_status: Arc<Mutex<Vec<(String, i32, i32, i32, i32)>>>, // store lobby names and their statuses
     pub game_db: SqlitePool,
@@ -75,7 +77,6 @@ pub struct Lobby {
     pub current_player_turn: String,
     pub current_player_index: i32,
     pub turns_remaining: i32,
-    pub spectators: Arc<Mutex<Vec<Player>>>,
 }
 
 impl Lobby {
@@ -99,6 +100,8 @@ impl Lobby {
         Self {
             name: lobby_name,
             players: Arc::new(Mutex::new(Vec::new())),
+            spectators: Arc::new(Mutex::new(Vec::new())),
+            to_be_deleted: Vec::new(),
             lobbies: Arc::new(Mutex::new(Vec::new())),
             lobby_names_and_status: Arc::new(Mutex::new(Vec::new())),
             deck: Deck::new(),
@@ -114,7 +117,6 @@ impl Lobby {
             current_player_turn: "".to_string(),
             current_player_index: 0,
             turns_remaining: 0,
-            spectators: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -525,6 +527,11 @@ impl Lobby {
                 player.ready = false;
             }
         }
+        for player_name in self.to_be_deleted.clone() {
+            println!("Removing disconnected player: {}", player_name);
+            self.remove_player(player_name.clone()).await;
+        }
+        self.to_be_deleted.clear();
 
         self.update_db().await;
     }

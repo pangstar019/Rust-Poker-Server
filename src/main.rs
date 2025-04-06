@@ -311,6 +311,7 @@ async fn handle_connection(ws: WebSocket, db: Arc<Database>, server_lobby: Arc<M
         games_played: 0,
         games_won: 0,
         lobby: server_lobby.clone(),
+        disconnected: false,
     };
 
     // Send initial welcome message
