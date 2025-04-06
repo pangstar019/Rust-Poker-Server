@@ -77,7 +77,6 @@ pub struct Lobby {
     pub current_player_turn: String,
     pub current_player_index: i32,
     pub turns_remaining: i32,
-    pub spectators: Arc<Mutex<Vec<Player>>>,
     pub deal_card_counter: i32,
     pub betting_round_counter: i32,
 }
@@ -120,7 +119,6 @@ impl Lobby {
             current_player_turn: "".to_string(),
             current_player_index: 0,
             turns_remaining: 0,
-            spectators: Arc::new(Mutex::new(Vec::new())),
             deal_card_counter: 0,
             betting_round_counter: 0,
 
