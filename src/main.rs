@@ -484,7 +484,6 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                                 if spectate {
                                     result = join_as_spectator(server_lobby.clone(), player_obj.clone(), db.clone()).await;
                                 } else {
-                                    println!("{}", player_lobby_type);
                                     match player_lobby_type {
                                         lobby::FIVE_CARD_DRAW => {
                                             result = games::five_card_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
@@ -493,9 +492,9 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                                         //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
 
                                         // }
-                                        lobby::TEXAS_HOLD_EM => {
-                                            result = games::texas_holdem_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
-                                        }
+                                        // lobby::TEXAS_HOLD_EM => {
+                                        //     result = games::texas_holdem_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
+                                        // }
                                         _ => {
                                             continue;
                                         }
