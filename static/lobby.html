@@ -584,7 +584,7 @@
         }, 100);
       };
 
-      // Replace or update your existing loadGameFrame function
+      // Add this function to load the appropriate game iframe
       function loadGameFrame(gameType) {
         const gameFrame = document.getElementById("gameFrame");
         let gameUrl = "five_card.html"; // Default
@@ -597,33 +597,23 @@
         
         // Give a small delay before loading new content
         setTimeout(() => {
-          // First check if there's a direct match in our mapping
-          if (gameHtmlFiles[gameType]) {
-            gameUrl = gameHtmlFiles[gameType];
-            console.log(`Direct match found for game type: ${gameType} → ${gameUrl}`);
-          }
-          // Fallback to checking by keywords
-          else if (gameType.toLowerCase().includes("texas") || gameType.toLowerCase().includes("hold")) {
+          if (gameType.toLowerCase().includes("texas") || gameType.toLowerCase().includes("hold")) {
             gameUrl = "texas_holdem.html";
-            console.log(`Texas Hold'em detected from: ${gameType}`);
           } else if (gameType.toLowerCase().includes("7") || gameType.toLowerCase().includes("stud")) {
             gameUrl = "seven_card.html";
-            console.log(`7 Card Stud detected from: ${gameType}`);
           } else if (gameType.toLowerCase().includes("5") || gameType.toLowerCase().includes("draw")) {
             gameUrl = "five_card.html";
-            console.log(`5 Card Draw detected from: ${gameType}`);
           }
           
           console.log(`Loading game frame: ${gameUrl} for type: ${gameType}`);
-          
-          // Load the file from /static/ directory
+          // Load the file from /static/ directory instead of the root path
           gameFrame.src = `/static/${gameUrl}`;
           
           // Add event listener to detect load errors
           gameFrame.onerror = function() {
             console.error(`Failed to load game frame: ${gameUrl}`);
             document.getElementById("gameLoading").textContent = 
-              `Error loading game. Please refresh the page or try a different browser.`;
+              `Error loading game. Please refresh the page.`;
           };
           
           // Add onload handler to hide loading message
@@ -638,13 +628,11 @@
       window.addEventListener("message", (event) => {
       console.log("Lobby received message:", event.data);
       
-      // Forward 'sendWebSocket' messages directly to the parent (index.html)
+      // Forward 'sendWebSocket' messages directly to index.html
       if (event.data.type === "sendWebSocket") {
         console.log("Forwarding to server:", event.data.data);
         window.parent.postMessage(event.data, "*");
       }
-      
-      // Handle other messages as before
       else if (event.data.type === "websocket") {
         handleMessage(event.data.data);
       }
@@ -654,7 +642,7 @@
       function handleMessage(data) {
         try {
           const response = JSON.parse(data);
-          console.log("Message from server:", response);
+          console.log("Handling message:", response);
 
           if (response.message) {
             responseDiv.innerText = response.message;
@@ -696,9 +684,13 @@
             // Check if it's this player's turn
             const playerName = localStorage.getItem('currentPlayerName');
             playerTurn = (response.gameInfo.currentPlayerTurn === playerName);
+            const game_state = response.gameInfo.gameState;
+            isBettingRound = (game_state == 14 || game_state == 15 || game_state == 16);
+
+            console.log("Player turn:", playerTurn, "Is betting round:", isBettingRound);
             
             // If it's the player's turn, update the betting controls
-            if (playerTurn) {
+            if (playerTurn && isBettingRound) {
               responseDiv.innerText = "It's your turn!";
               
               // Update betting info
@@ -734,7 +726,7 @@
           }
 
           // In your handleMessage function, add handling for showdownHands type
-          if (response.type === "showdownHands") {
+          if (response.command === "showdownHands") {
             console.log("Showdown hands received:", response);
             sendGameCommand("showdownHands", response);
           }
@@ -758,12 +750,12 @@
           
           // Check for non-JSON messages about turns
           if (typeof data === 'string') {
-            if (data.includes("Your turn")) {
+            if (data.includes("Your turn") && data.includes("betting round")) {
               playerTurn = true;
               document.getElementById("bettingControls").classList.remove("hidden");
               responseDiv.innerText = data;
               updateValidActions();
-            } else if (data.includes("betting round")) {
+            } else {
               // Refresh game state when a betting round starts
               sendToServer(JSON.stringify({ action: "ShowStats" }));
             }
@@ -818,6 +810,13 @@
         mainContainer.classList.remove("game-finished");
         lobbyControls.classList.add("hidden");
         gameControls.classList.remove("hidden");
+
+        isReady = false;
+        readyButton.textContent = "Ready Up";
+        readyButton.style.backgroundColor = "#27ae60";
+        
+        // Hide the entire top section containing player list and stats panels
+        topSection.classList.add("hidden");
         
         // Hide betting controls initially - they'll show when it's the player's turn
         document.getElementById("bettingControls").classList.add("hidden");
@@ -1084,7 +1083,7 @@
           }
           // Try 7 Card Stud with different variations  
           else if (gameType.toLowerCase().includes("7") || gameType.toLowerCase().includes("stud")) {
-            ruleUrl = "https://en.wikipedia.org/wiki/Seven-card_stud";
+            ruleUrl = "https://en.wikipedia.org/wiki/Seven-card-stud";
             console.log("7 Card Stud variation detected");
           }
           // Try 5 Card Draw with different variations
@@ -1170,7 +1169,7 @@
         document.getElementById("gameLoading").style.display = "none";
       };
 
-      // Add this new function after startGame
+      // Modified endGame function
       function endGame() {
         gameActive = false;
         
@@ -1180,25 +1179,15 @@
         lobbyControls.classList.remove("hidden");
         gameControls.classList.add("hidden");
         
+        // Show the top section again when returning to lobby
+        topSection.classList.remove("hidden");
+        
         // Refresh lobby data
         refreshLobbyInfo();
         refreshStats();
         
         console.log("Game ended");
       }
-
-      // Add this to your existing WebSocket onopen handler
-      socket.onopen = function(e) {
-        console.log("WebSocket connection established");
-        
-        // If we're in a lobby, request player list on connection/reconnection
-        if (window.location.pathname.includes("lobby") || 
-            window.location.pathname.endsWith("lobby.html")) {
-          setTimeout(() => {
-            sendToServer(JSON.stringify({ action: "ShowLobbyInfo" }));
-          }, 300);
-        }
-      };
     </script>
   </body>
 </html>
