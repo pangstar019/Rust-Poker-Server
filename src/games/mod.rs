@@ -1304,6 +1304,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                             lobby_guard.send_player_list().await;
                                             println!("finished_game completed");
                                         }
+                                        player.hand.clear();
                                         player.state = player::IN_LOBBY;
                                         exit = true;
                                         drop(lobby_guard);                                }
