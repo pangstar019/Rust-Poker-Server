@@ -1,5 +1,5 @@
 target/
 debug/
-*.db
+src/*.db
 *.lock
 src/poker.db
