@@ -167,10 +167,15 @@
             font-weight: bold;
             text-transform: uppercase;
             font-size: 14px;
+            background-color: rgba(0,0,0,0.7);
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-bottom: 5px;
         }
 
         .player-folded {
-            opacity: 0.7;
+            opacity: 0.5; /* Make it more visible */
+            filter: grayscale(100%); /* Add grayscale effect like in Five Card Draw */
         }
 
         .player-bet {
@@ -563,15 +568,32 @@
                 
                 // Update player state (folded, etc.)
                 if (player.state !== undefined) {
-                    if (player.state === FOLDED) { // FOLDED = 1, not 3
-                        const foldedDiv = document.createElement('div');
-                        foldedDiv.className = 'folded-indicator';
-                        foldedDiv.textContent = 'FOLDED';
-                        cardsContainer.appendChild(foldedDiv);
+                    if (player.state === FOLDED) { // FOLDED = 1
                         playerElement.classList.add('player-folded');
-                        return;
+                        
+                        // Add folded indicator text
+                        const cardsContainer = playerElement.querySelector('.player-cards');
+                        if (cardsContainer) {
+                            // Clear existing cards
+                            cardsContainer.innerHTML = '';
+                            
+                            // Add folded indicator
+                            const foldedDiv = document.createElement('div');
+                            foldedDiv.className = 'folded-indicator';
+                            foldedDiv.textContent = 'FOLDED';
+                            cardsContainer.appendChild(foldedDiv);
+                        }
                     } else {
                         playerElement.classList.remove('player-folded');
+                        
+                        // Make sure to remove any existing FOLDED indicator
+                        const cardsContainer = playerElement.querySelector('.player-cards');
+                        if (cardsContainer) {
+                            const foldedIndicator = cardsContainer.querySelector('.folded-indicator');
+                            if (foldedIndicator) {
+                                foldedIndicator.remove();
+                            }
+                        }
                     }
                 }
             });
@@ -1058,10 +1080,10 @@
             const rank = cardValue % 13;
             
             // Rank symbols
-            const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+            const ranks = ['A','2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
             
             // Suit symbols
-            const suits = ['♠', '♥', '♦', '♣'];
+            const suits = ['♥','♦','♠', '♣'];
             
             return ranks[rank] + suits[suit];
         }
@@ -1072,7 +1094,7 @@
             
             const suit = Math.floor(cardValue / 13);
             // Hearts and diamonds are red, spades and clubs are black
-            return (suit === 1 || suit === 2) ? 'red-card' : 'black-card';
+            return (suit === 0 || suit === 1) ? 'red-card' : 'black-card';
         }
 
         // Utility function to compare hand ranks
