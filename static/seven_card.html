@@ -291,6 +291,32 @@
                 updateGameInfo(data.data);
             } else if (data.command === "showdownHands") {
                 handleShowdownData(data.data);
+            } else if (data.command === "displayWinner") {
+                handleWinner(data.data);
+                // const winnerName = data.data.winnerName;
+                // const playerSpot = playerElements[winnerName];
+                
+                // if (playerSpot) {
+                //     playerSpot.classList.add('winner');
+                //     const winnerLabel = document.createElement('div');
+                //     winnerLabel.className = 'winner-label';
+                //     winnerLabel.textContent = 'WINNER!';
+                //     playerSpot.appendChild(winnerLabel);
+                // }
+            }
+        }
+
+        function handleWinner(data) {
+            console.log("Winner data received: ", data);
+            const winnerName = data.winnerName;
+            const playerSpot = playerElements[winnerName];
+            
+            if (playerSpot) {
+                playerSpot.classList.add('winner');
+                const winnerLabel = document.createElement('div');
+                winnerLabel.className = 'winner-label';
+                winnerLabel.textContent = 'WINNER!';
+                playerSpot.appendChild(winnerLabel);
             }
         }
 
@@ -581,7 +607,7 @@
                     const isFaceDown = cardValue > 52;
                     const actualCardValue = isFaceDown ? cardValue - 53 : cardValue;
                     
-                    if (isCurrentPlayer || !isFaceDown) {
+                    if (isCurrentPlayer && !isFaceDown) {
                         // Show card to the current player or if it's a face-up card
                         card.textContent = cardToString(actualCardValue);
                         card.dataset.cardValue = actualCardValue;
@@ -598,8 +624,13 @@
                         }, 300 + (i * 100));
                     } else {
                         // For other players' face down cards
-                        card.textContent = '?';
-                        card.classList.add('facedown');
+                        if (isFaceDown) {
+                            card.classList.add('facedown');
+                        } else {
+                            card.textContent = cardToString(actualCardValue);
+                            card.dataset.cardValue = actualCardValue;
+                            card.classList.add(getCardColor(actualCardValue));
+                        }
                     }
                     
                     cardsContainer.appendChild(card);
@@ -611,17 +642,35 @@
         function cardToString(cardValue) {
             if (cardValue === undefined || cardValue === null) return '?';
             
-            // Extract suit (0-3) and rank (0-12)
-            const suit = Math.floor(cardValue / 13);
             const rank = cardValue % 13;
+            const suit = Math.floor(cardValue / 13);
             
-            // Rank symbols
-            const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+            let cardStr = '';
             
-            // Suit symbols
-            const suits = ['♠', '♥', '♦', '♣'];
+            // Determine rank
+            if (rank === 0) {
+                cardStr += 'A';
+            } else if (rank <= 9) {
+                cardStr += (rank + 1).toString();
+            } else if (rank === 10) {
+                cardStr += 'J';
+            } else if (rank === 11) {
+                cardStr += 'Q';
+            } else if (rank === 12) {
+                cardStr += 'K';
+            }
             
-            return ranks[rank] + suits[suit];
+            // Determine suit
+            if (suit === 0) {
+                cardStr += '♥';
+            } else if (suit === 1) {
+                cardStr += '♦';
+            } else if (suit === 2) {
+                cardStr += '♠';
+            } else if (suit === 3) {
+                cardStr += '♣';
+            }
+            return cardStr;
         }
 
         // Helper function to determine card color based on suit
@@ -630,7 +679,7 @@
             
             const suit = Math.floor(cardValue / 13);
             // Hearts and diamonds are red, spades and clubs are black
-            return (suit === 1 || suit === 2) ? 'red-card' : 'black-card';
+            return (suit === 0 || suit === 1) ? 'red-card' : 'black-card';
         }
 
         // Update game state
@@ -699,8 +748,8 @@
                 if (playerData.hand && playerData.hand.length) {
                     playerData.hand.forEach(cardValue => {
                         const card = document.createElement('div');
-                        card.className = `card ${getCardColor(cardValue % 53)}`; // Modulo 53 to handle face-down cards
-                        card.textContent = cardToString(cardValue % 53);
+                        card.className = `card ${getCardColor(cardValue % 52)}`; // Modulo 53 to handle face-down cards
+                        card.textContent = cardToString(cardValue % 52);
                         cardsContainer.appendChild(card);
                     });
                 }
