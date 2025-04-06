@@ -77,6 +77,8 @@ pub struct Lobby {
     pub current_player_turn: String,
     pub current_player_index: i32,
     pub turns_remaining: i32,
+    pub deal_card_counter: i32,
+    pub betting_round_counter: i32,
 }
 
 impl Lobby {
@@ -117,6 +119,9 @@ impl Lobby {
             current_player_turn: "".to_string(),
             current_player_index: 0,
             turns_remaining: 0,
+            deal_card_counter: 0,
+            betting_round_counter: 0,
+
         }
     }
 
@@ -536,6 +541,118 @@ impl Lobby {
         self.update_db().await;
     }
     
+    pub async fn showdown_texas(&self) -> Vec<String> {
+        let mut players = self.players.lock().await;
+        let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
+        let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
+        let mut winning_players_names: Vec<String> = Vec::new();
+        let mut winning_hand = (-1, -1, -1, -1, -1, -1); // keeps track of current highest hand, could change when incrementing between players
+        let mut winning_players_indices: Vec<i32> = Vec::new();
+        let mut player_hand_type: (i32, i32, i32, i32, i32, i32);
+        let mut winners: Vec<String> = Vec::new();
+        for player in players.iter_mut() {
+            if player.state == player::FOLDED {
+                continue;
+            };
+            let player_hand = player.hand.clone();
+            
+            if self.game_type == SEVEN_CARD_STUD || self.game_type == TEXAS_HOLD_EM {
+                // already has hand ranking
+                player_hand_type = (player.hand[0], player.hand[1], player.hand[2], player.hand[3], player.hand[4], player.hand[5]);
+            }
+            else {
+                player_hand_type = get_hand_type(&player_hand);
+            }
+            
+            // Compare hand types first
+            if player_hand_type.0 > winning_hand.0 {
+                // Better hand type, clear previous winners
+                winning_hand = player_hand_type;
+                winning_players.clear();
+                winning_players_names.clear();
+                winning_players.push(player.clone());
+                winning_players_names.push(player.name.clone());
+                winning_players_indices.clear();
+            } 
+            // If hand types are equal, compare all five cards in sequence
+            else if player_hand_type.0 == winning_hand.0 {
+                // Compare first card (highest)
+                if player_hand_type.1 > winning_hand.1 {
+                    winning_hand = player_hand_type;
+                    winning_players.clear();
+                    winning_players_names.clear();
+                    winning_players.push(player.clone());
+                    winning_players_names.push(player.name.clone());
+                    winning_players_indices.clear();
+                } 
+                else if player_hand_type.1 == winning_hand.1 {
+                    // Compare second card
+                    if player_hand_type.2 > winning_hand.2 {
+                        winning_hand = player_hand_type;
+                        winning_players.clear();
+                        winning_players_names.clear();
+                        winning_players.push(player.clone());
+                        winning_players_names.push(player.name.clone());
+                        winning_players_indices.clear();
+                    }
+                    else if player_hand_type.2 == winning_hand.2 {
+                        // Compare third card
+                        if player_hand_type.3 > winning_hand.3 {
+                            winning_hand = player_hand_type;
+                            winning_players.clear();
+                            winning_players_names.clear();
+                            winning_players.push(player.clone());
+                            winning_players_names.push(player.name.clone());
+                            winning_players_indices.clear();
+                        }
+                        else if player_hand_type.3 == winning_hand.3 {
+                            // Compare fourth card
+                            if player_hand_type.4 > winning_hand.4 {
+                                winning_hand = player_hand_type;
+                                winning_players.clear();
+                                winning_players_names.clear();
+                                winning_players.push(player.clone());
+                                winning_players_names.push(player.name.clone());
+                                winning_players_indices.clear();
+                            }
+                            else if player_hand_type.4 == winning_hand.4 {
+                                // Compare fifth card
+                                if player_hand_type.5 > winning_hand.5 {
+                                    winning_hand = player_hand_type;
+                                    winning_players.clear();
+                                    winning_players_names.clear();
+                                    winning_players.push(player.clone());
+                                    winning_players_names.push(player.name.clone());
+                                    winning_players_indices.clear();
+                                }
+                                else if player_hand_type.5 == winning_hand.5 {
+                                    // It's a complete tie, add this player as co-winner
+                                    winning_players.push(player.clone());
+                                    winning_players_names.push(player.name.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        let winning_player_count = winning_players.len();
+        let pot_share = self.pot / winning_player_count as i32;
+        for i in 0..winning_player_count {
+            for j in 0..players.len() {
+                if players[j].name == winning_players[i].name {
+                    winners.push(players[j].name.clone());
+                    players[j].games_won += 1;
+                    players[j].wallet += pot_share;
+                    println!("Player {} wins {}!", players[j].name, pot_share);
+                    println!("Player {} wallet: {}", players[j].name, players[j].wallet);
+                }
+            }
+        }
+        winners
+    }
+
     
     pub async fn update_db(&self) {
         // update the database with the new player stats
@@ -576,7 +693,7 @@ impl Lobby {
         false
     }
 
-    pub async fn update_player_reference(&self, player_ref: &Player) {
+    pub async fn update_player_reference(&mut self, player_ref: &Player) {
         let mut players = self.players.lock().await;
         if let Some(player) = players.iter_mut().find(|p| p.name == player_ref.name) {
             player.hand = player_ref.hand.clone();
@@ -713,6 +830,44 @@ impl Lobby {
         }
         println!("players list with hands sent");
     }
+    
+    // Add this method to your Lobby impl
+    pub async fn reset_current_bets(&mut self) {
+        let mut players = self.players.lock().await;
+        for player in players.iter_mut() {
+            if player.state != player::FOLDED && player.state != player::ALL_IN {
+                player.current_bet = 0;
+                player.state = player::IN_GAME;
+            }
+        }
+        self.current_max_bet = 0;
+    }
+    
+    // Also add this method to help with game reset
+    pub async fn reset_game_for_new_round(&mut self) {
+        // Clear the community cards
+        self.community_cards.lock().await.clear();
+        
+        // Reset pot
+        self.pot = 0;
+        
+        // Reset current max bet
+        self.current_max_bet = 0;
+        
+        // Reset player states and bets
+        let mut players = self.players.lock().await;
+        for player in players.iter_mut() {
+            player.current_bet = 0;
+            player.hand.clear();
+            player.state = player::IN_LOBBY;
+        }
+        self.deck = Deck::new();
+        
+        // Move dealer position
+        self.first_betting_player = (self.first_betting_player + 1) % self.current_player_count;
+    }
 }
+
+
 
 

@@ -137,7 +137,7 @@ async fn main() -> std::io::Result<()> {
     let five_card = warp::path("five_card")
         .and(warp::fs::dir("../static/five_card.html"));
 
-    let seven_card = warp::path("sevn_card")
+    let seven_card = warp::path("seven_card")
         .and(warp::fs::dir("../static/seven_card.html"));
 
     let texas_hold_em = warp::path("texas_holdem")
@@ -489,9 +489,10 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                                         lobby::FIVE_CARD_DRAW => {
                                             result = games::five_card_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
                                         }
-                                        // lobby::SEVEN_CARD_STUD => {
-                                        //     // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
-
+                                        lobby::SEVEN_CARD_STUD => {
+                                            // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
+                                            result = games::seven_card_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
+                                        }
                                         // }
                                         // lobby::TEXAS_HOLD_EM => {
                                         //     result = games::texas_holdem_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
