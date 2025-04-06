@@ -413,7 +413,15 @@ impl Lobby {
         self.current_player_index = self.first_betting_player;
         self.current_player_turn = self.players.lock().await[self.first_betting_player as usize].name.clone();
         self.turns_remaining = self.current_player_count;
-        println!("current player turn: {}", self.current_player_turn);
+        {
+            let mut players = self.players.lock().await;
+            for player in players.iter_mut() {
+                player.state = player::IN_GAME;
+                player.hand.clear();
+                player.current_bet = 0;
+                player.ready = false;
+            }
+        }
         self.game_state = START_OF_ROUND;
         self.deck.shuffle();
         println!("lobby {} set up for startin game.", self.name);

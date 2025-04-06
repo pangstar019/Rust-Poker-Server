@@ -810,6 +810,13 @@
         mainContainer.classList.remove("game-finished");
         lobbyControls.classList.add("hidden");
         gameControls.classList.remove("hidden");
+
+        isReady = false;
+        readyButton.textContent = "Ready Up";
+        readyButton.style.backgroundColor = "#27ae60";
+        
+        // Hide the entire top section containing player list and stats panels
+        topSection.classList.add("hidden");
         
         // Hide betting controls initially - they'll show when it's the player's turn
         document.getElementById("bettingControls").classList.add("hidden");
@@ -1076,7 +1083,7 @@
           }
           // Try 7 Card Stud with different variations  
           else if (gameType.toLowerCase().includes("7") || gameType.toLowerCase().includes("stud")) {
-            ruleUrl = "https://en.wikipedia.org/wiki/Seven-card_stud";
+            ruleUrl = "https://en.wikipedia.org/wiki/Seven-card-stud";
             console.log("7 Card Stud variation detected");
           }
           // Try 5 Card Draw with different variations
@@ -1162,7 +1169,7 @@
         document.getElementById("gameLoading").style.display = "none";
       };
 
-      // Add this new function after startGame
+      // Modified endGame function
       function endGame() {
         gameActive = false;
         
@@ -1171,6 +1178,9 @@
         mainContainer.classList.add("game-finished");
         lobbyControls.classList.remove("hidden");
         gameControls.classList.add("hidden");
+        
+        // Show the top section again when returning to lobby
+        topSection.classList.remove("hidden");
         
         // Refresh lobby data
         refreshLobbyInfo();
