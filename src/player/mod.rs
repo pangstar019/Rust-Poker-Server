@@ -34,6 +34,7 @@ pub struct Player {
     pub games_played: i32,
     pub games_won: i32,
     pub lobby: Arc<Mutex<Lobby>>,
+    pub disconnected: bool,
 }
 
 impl Player {

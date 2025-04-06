@@ -248,10 +248,12 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            background-color: rgba(0,0,0,0.7);
+            background-color: rgba(0,0,0,0.8);
             padding: 15px;
             border-radius: 8px;
             z-index: 10;
+            box-shadow: 0 0 20px rgba(0,0,0,0.7);
+            border: 2px solid #f8c471;
         }
 
         .card-selection-title {
@@ -318,15 +320,43 @@
             background-color: #4b5563;
         }
 
-        /* Add to your existing CSS */
         .winner {
             animation: winner-glow 2s infinite;
-            box-shadow: 0 0 20px gold;
+            box-shadow: 0 0 25px gold !important;
+            border: 3px solid gold !important;
+            transform: scale(1.05);
+            z-index: 10;
+            background-color: rgba(0, 0, 0, 0.8) !important;
         }
 
         @keyframes winner-glow {
-            0%, 100% { box-shadow: 0 0 20px gold; }
-            50% { box-shadow: 0 0 30px #ffcc00; }
+            0%, 100% { box-shadow: 0 0 25px gold; }
+            50% { box-shadow: 0 0 40px #ffdd00; }
+        }
+
+        .winner-label {
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: gold;
+            color: black;
+            font-weight: bold;
+            padding: 4px 12px;
+            border-radius: 4px;
+            animation: winner-bounce 1s infinite;
+            z-index: 11;
+            font-size: 16px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        .winnings-label {
+            animation: winnings-fade 1.5s infinite;
+        }
+
+        @keyframes winnings-fade {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
         }
 
         .hand-type {
@@ -337,24 +367,6 @@
             border-radius: 4px;
             margin-bottom: 5px;
             text-align: center;
-        }
-
-        .winner-label {
-            position: absolute;
-            top: -20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: gold;
-            color: black;
-            font-weight: bold;
-            padding: 2px 8px;
-            border-radius: 4px;
-            animation: winner-bounce 1s infinite;
-        }
-
-        @keyframes winner-bounce {
-            0%, 100% { transform: translateX(-50%) scale(1); }
-            50% { transform: translateX(-50%) scale(1.1); }
         }
     </style>
 </head>
@@ -401,24 +413,58 @@
         const SHOWDOWN_PHASE = 7;
         let showdownData = null;
 
-        window.addEventListener("message", (event) => {
-            console.log("Received message from parent frame: ", event);
-            if (event.data.type === "command") {
-                handleMessage(event.data);
+        // Update the window message listener to correctly handle game state updates
+        window.addEventListener("message", function(event) {
+            // Handle websocket messages forwarded from the parent window
+            if (event.data.type === "websocket") {
+                try {
+                    const data = JSON.parse(event.data.data);
+                    console.log("Game received websocket message:", data);
+                    
+                    // Process the combined state
+                    if (data.lobbyInfo) {
+                        // Handle lobby info if needed
+                    }
+                    
+                    if (data.gameInfo) {
+                        updateGameInfo(data.gameInfo);
+                    }
+                    
+                    if (data.players) {
+                        updatePlayerHands(data.players);
+                    }
+                    
+                    // Handle specific action messages
+                    if (data.action === "draw" && data.yourTurn === true) {
+                        console.log("Drawing turn detected from direct message");
+                        showCardSelectionUI();
+                    }
+                    
+                } catch (e) {
+                    console.error("Error handling websocket message:", e);
+                }
             }
-        });
-
-        // Enhance the message handling in your existing code
-        window.addEventListener('message', function(event) {
-            if (event.data.type === 'updateGameInfo') {
-                updateGameInfo(event.data.data);
-            } else if (event.data.type === 'updatePlayers') {
-                updatePlayers(event.data.data.players, event.data.data.gameActive);
-            } else if (event.data.type === 'startGame') {
-                startGame(event.data.data);
-            } else if (event.data.type === 'showdownHands') {
-                // Add this handler for showdown data
-                handleShowdownData(event.data.data);
+            
+            // Handle commands from the lobby frame
+            else if (event.data.type === "command") {
+                console.log("Game received command:", event.data);
+                
+                if (event.data.command === "updateGameInfo") {
+                    updateGameInfo(event.data.data);
+                }
+                
+                if (event.data.command === "updatePlayers") {
+                    updatePlayers(event.data.data.players, event.data.data.gameActive);
+                }
+                
+                if (event.data.command === "startGame") {
+                    startGame(event.data.data);
+                }
+                
+                if (event.data.command === "showdownHands") {
+                    console.log("Showdown hands received:", event.data.data);
+                    handleShowdownData(event.data.data);
+                }
             }
         });
 
@@ -430,71 +476,50 @@
             } else if (data.command === "updateGameInfo") {
                 console.log("Game info received: ", data.data);
                 updateGameInfo(data.data);
-            } else if (data.command === "showdown") {
+            } else if (data.command === "showdownHands") {
+                console.log("Showdown hands received from game command:", data);
                 handleShowdownData(data.data);
             }
         }
 
+        // Update the updateGameInfo function to handle the currentPlayerTurn
         function updateGameInfo(data) {
-            // Update pot value if provided
-            if (data && data.pot !== undefined) {
-                const potElement = document.querySelector('.pot');
-                if (potElement) {
-                    potElement.textContent = `Pot: $${data.pot}`;
-                    console.log(`Updated pot to $${data.pot}`);
-                }
-            }
-            
-            // Update game state if provided
             if (data && data.gameState !== undefined) {
                 updateGameState(data.gameState);
             }
             
-            // Update turn indicator if provided
             if (data && data.currentPlayerTurn) {
-                // Remove turn highlight from all players
-                const allPlayerSpots = document.querySelectorAll('.player-spot');
-                allPlayerSpots.forEach(spot => {
-                    spot.classList.remove('player-turn');
-                });
+                updatePlayerTurn(data.currentPlayerTurn);
                 
-                // Find the player whose turn it is and highlight them
-                const currentTurnPlayer = data.currentPlayerTurn;
-                let playerFound = false;
+                // Check if we need to show the drawing interface
+                const currentPlayerName = localStorage.getItem('currentPlayerName');
+                const isCurrentPlayerTurn = data.currentPlayerTurn === currentPlayerName;
+                const isDraw = data.gameState === DRAW_PHASE;
                 
-                allPlayerSpots.forEach(spot => {
-                    const nameElement = spot.querySelector('.player-name');
-                    if (nameElement && nameElement.textContent === currentTurnPlayer) {
-                        spot.classList.add('player-turn');
-                        playerFound = true;
-                        
-                        // Update game status text based on game state
-                        const isCurrentUser = currentTurnPlayer === localStorage.getItem('currentPlayerName');
-                        const gameState = data.gameState || 0;
-                        
-                        if (isCurrentUser) {
-                            if (gameState === DRAW_PHASE) {
-                                gameStatus.textContent = `Your turn to draw!`;
-                                showCardSelectionUI();
-                            } else {
-                                gameStatus.textContent = `Your turn!`;
-                            }
-                        } else {
-                            if (gameState === DRAW_PHASE) {
-                                gameStatus.textContent = `${currentTurnPlayer}'s turn to draw`;
-                            } else {
-                                gameStatus.textContent = `${currentTurnPlayer}'s turn`;
-                            }
-                        }
-                    }
-                });
+                console.log("Game state: " + data.gameState + 
+                        ", isDraw: " + isDraw + 
+                        ", isCurrentTurn: " + isCurrentPlayerTurn + 
+                        ", drawCompleted: " + drawingCompleted);
                 
-                if (!playerFound) {
-                    console.log(`Could not find player spot for ${currentTurnPlayer}`);
+                if (isDraw && isCurrentPlayerTurn && !drawingCompleted) {
+                    console.log("Drawing UI should display based on game state");
+                    showCardSelectionUI();
+                } else if (!isDraw || !isCurrentPlayerTurn) {
+                    hideCardSelectionUI();
                 }
             }
+            
+            // Update pot display if available
+            if (data && data.pot !== undefined) {
+                const potElement = document.querySelector('.pot');
+                if (potElement) {
+                    potElement.textContent = `Pot: $${data.pot}`;
+                }
+            }
+            
+            // Update other game state elements as needed
         }
-        
+
         // Update player information
         function updatePlayers(players, gameActive) {
             // Safety checks for undefined or non-array
@@ -560,10 +585,28 @@
                 
                 // Update player state (folded, etc.)
                 if (player.state !== undefined) {
-                    if (player.state === 1) { // FOLDED = 1
+                    if (player.state === 1) { // player::FOLDED = 1
                         playerElement.classList.add('player-folded');
                     } else {
                         playerElement.classList.remove('player-folded');
+                    }
+                }
+
+                // Check for disconnected status
+                if (player.disconnected) {
+                    const playerElement = playerElements[player.name];
+                    if (playerElement) {
+                        // Add disconnected visual treatment
+                        playerElement.classList.add('player-disconnected');
+                        
+                        // Add a disconnected indicator
+                        const disconnectedIndicator = document.createElement('div');
+                        disconnectedIndicator.className = 'disconnected-indicator';
+                        disconnectedIndicator.textContent = 'DISCONNECTED';
+                        playerElement.appendChild(disconnectedIndicator);
+                        
+                        // Also mark as folded for game mechanics
+                        playerElement.classList.add('player-folded');
                     }
                 }
             });
@@ -869,7 +912,7 @@
             return (suit === 1 || suit === 2) ? 'red-card' : 'black-card';
         }
 
-        // Enhance the updateGameState function
+        // Simplify the updateGameState function since updateGameInfo now handles drawing UI
         function updateGameState(newGameState) {
             console.log("Game state updated to:", newGameState);
             
@@ -883,23 +926,12 @@
             gameState = newGameState;
             
             // If the game state changes, reset the drawing completed flag
-            if (gameState !== newGameState && newGameState !== DRAW_PHASE) {
+            if (gameState !== DRAW_PHASE) {
                 drawingCompleted = false;
             }
             
-            // Check if we're in draw phase
-            if (newGameState === DRAW_PHASE) {
-                const currentPlayerName = localStorage.getItem('currentPlayerName');
-                const currentPlayerTurn = document.querySelector('.player-turn .player-name')?.textContent;
-                
-                // Only show card selection UI if it's the current player's turn and they haven't drawn yet
-                if (currentPlayerName === currentPlayerTurn && !drawingCompleted) {
-                    showCardSelectionUI();
-                }
-            } else {
-                // If not in draw phase, hide card selection UI if it exists
-                hideCardSelectionUI();
-            }
+            // Additional game state specific logic can be added here
+            // but the drawing UI visibility is now handled in updateGameInfo
         }
 
         // Add this helper function to clean up game UI
@@ -922,111 +954,74 @@
             showdownData = null;
         }
 
-        // Function to show card selection UI
+        // Update the showCardSelectionUI function to be more robust
         function showCardSelectionUI() {
+            console.log("Attempting to show card selection UI");
+            
             // Don't show the UI if the player has already completed drawing
             if (drawingCompleted) {
                 console.log('Drawing already completed, not showing UI');
                 return;
             }
             
+            // Get the current player's cards
+            const currentPlayerSpot = document.querySelector('.current-player');
+            if (!currentPlayerSpot) {
+                console.log("Could not find current player's spot");
+                return;
+            }
+            
             // Remove any existing card selection UI
-            hideCardSelectionUI();
-            
-            // Get current player's cards
-            const currentPlayerElement = document.querySelector('.current-player');
-            if (!currentPlayerElement) return;
-            
-            const cardsContainer = currentPlayerElement.querySelector('.player-cards');
-            if (!cardsContainer || !cardsContainer.children.length) return;
+            const existingUI = document.getElementById('cardSelectionUI');
+            if (existingUI) {
+                existingUI.remove();
+            }
             
             // Create card selection container
-            const selectionContainer = document.createElement('div');
-            selectionContainer.className = 'card-selection-container';
-            selectionContainer.id = 'cardSelectionUI';
+            const selectionUI = document.createElement('div');
+            selectionUI.id = 'cardSelectionUI';
+            selectionUI.className = 'card-selection-container';
+            selectionUI.innerHTML = `
+                <div class="card-selection-title">Select cards to exchange</div>
+                <div class="card-selection-grid" id="cardSelectionGrid"></div>
+                <div class="draw-actions">
+                    <button class="draw-button draw-submit" onclick="submitCardExchange()">Exchange Selected Cards</button>
+                    <button class="draw-button draw-cancel" onclick="submitCardExchange()">Keep All Cards</button>
+                </div>
+            `;
+            document.querySelector('.table-area').appendChild(selectionUI);
             
-            // Add title
-            const title = document.createElement('div');
-            title.className = 'card-selection-title';
-            title.textContent = 'Select cards to exchange (0-5)';
-            selectionContainer.appendChild(title);
+            // Get cards from current player's hand and add them to the selection grid
+            const cards = currentPlayerSpot.querySelectorAll('.card:not(.facedown):not(.card-placeholder)');
+            const cardGrid = document.getElementById('cardSelectionGrid');
             
-            // Create card selection grid
-            const cardGrid = document.createElement('div');
-            cardGrid.className = 'card-selection-grid';
+            selectedCards = []; // Reset selected cards array
             
-            // Get player's cards and create selectable versions
-            const currentPlayerCards = [];
-            
-            // Extract card values from the player's current hand
-            const cardElements = currentPlayerElement.querySelectorAll('.card:not(.card-placeholder)');
-            cardElements.forEach(card => {
-                if (card.dataset.cardValue) {
-                    currentPlayerCards.push({
-                        value: parseInt(card.dataset.cardValue),
-                        text: card.textContent,
-                        color: card.classList.contains('red-card') ? 'red-card' : 'black-card'
-                    });
-                }
-            });
-            
-            // Create selectable cards
-            selectedCards = []; // Reset selected cards
-            
-            currentPlayerCards.forEach((card, index) => {
+            cards.forEach((card, index) => {
+                const cardValue = card.dataset.cardValue;
                 const selectableCard = document.createElement('div');
-                selectableCard.className = `card selectable-card ${card.color}`;
-                selectableCard.textContent = card.text;
+                selectableCard.className = `card selectable-card ${card.classList.contains('red-card') ? 'red-card' : 'black-card'}`;
+                selectableCard.textContent = card.textContent;
                 selectableCard.dataset.index = index;
-                selectableCard.dataset.value = card.value;
                 
-                // Add click event for selection
-                selectableCard.addEventListener('click', function() {
+                selectableCard.onclick = function() {
                     this.classList.toggle('selected');
+                    const cardIndex = parseInt(this.dataset.index);
                     
                     if (this.classList.contains('selected')) {
-                        selectedCards.push(index);
+                        if (!selectedCards.includes(cardIndex)) {
+                            selectedCards.push(cardIndex);
+                        }
                     } else {
-                        selectedCards = selectedCards.filter(i => i !== index);
+                        selectedCards = selectedCards.filter(idx => idx !== cardIndex);
                     }
-                    
-                    console.log('Selected card indices:', selectedCards);
-                });
+                    console.log("Selected cards:", selectedCards);
+                };
                 
                 cardGrid.appendChild(selectableCard);
             });
             
-            selectionContainer.appendChild(cardGrid);
-            
-            // Add action buttons
-            const actionButtons = document.createElement('div');
-            actionButtons.className = 'draw-actions';
-            
-            // Submit button
-            const submitButton = document.createElement('button');
-            submitButton.className = 'draw-button draw-submit';
-            submitButton.textContent = 'Exchange Cards';
-            submitButton.addEventListener('click', submitCardExchange);
-            
-            // Cancel button (stand pat)
-            const cancelButton = document.createElement('button');
-            cancelButton.className = 'draw-button draw-cancel';
-            cancelButton.textContent = 'Stand Pat (Keep All)';
-            cancelButton.addEventListener('click', () => {
-                // Submit an empty selection (stand pat)
-                selectedCards = [];
-                submitCardExchange();
-            });
-            
-            actionButtons.appendChild(cancelButton);
-            actionButtons.appendChild(submitButton);
-            selectionContainer.appendChild(actionButtons);
-            
-            // Add to game container
-            document.querySelector('.game-container').appendChild(selectionContainer);
-            
-            // Update game status
-            gameStatus.textContent = 'Select cards to exchange or stand pat';
+            console.log("Card selection UI displayed");
         }
 
         // Function to hide card selection UI
@@ -1065,35 +1060,26 @@
         // Add this function to handle showdown updates
         function handleShowdownData(data) {
             console.log('Showdown data received:', data);
-            showdownData = data;
+            showdownData = data.data;
             
             // Create and display the showdown UI
             displayShowdownResults();
+            
+            // If a winner message was provided, display it
+            if (data.winnerMessage) {
+                const gameStatus = document.getElementById('gameStatus');
+                gameStatus.textContent = data.winnerMessage;
+            }
         }
 
         // Function to display showdown results
         function displayShowdownResults() {
-            if (!showdownData || !showdownData.hands || !showdownData.hands.length) return;
+            if (!showdownData || !showdownData.hands || !showdownData.hands.length) {
+                console.error("Invalid showdown data:", showdownData);
+                return;
+            }
             
-            // Find highest ranked hand to identify winner(s)
-            let highestRank = [-1, -1, -1, -1, -1, -1];
-            
-            showdownData.hands.forEach(handData => {
-                if (!handData.handRank) return;
-                
-                const rank = [
-                    handData.handRank[0], 
-                    handData.handRank[1], 
-                    handData.handRank[2], 
-                    handData.handRank[3], 
-                    handData.handRank[4], 
-                    handData.handRank[5]
-                ];
-                
-                if (compareRanks(rank, highestRank) > 0) {
-                    highestRank = rank;
-                }
-            });
+            console.log("Displaying showdown results:", showdownData);
             
             // Now reveal all cards and highlight winners
             const playerSpots = document.querySelectorAll('.player-spot');
@@ -1114,12 +1100,6 @@
                 // Clear existing cards
                 cardsContainer.innerHTML = '';
                 
-                // Add hand type indicator
-                const handTypeElement = document.createElement('div');
-                handTypeElement.className = 'hand-type';
-                handTypeElement.textContent = playerData.handType || 'Folded';
-                cardsContainer.appendChild(handTypeElement);
-                
                 // Display all cards face up
                 if (playerData.hand && playerData.hand.length) {
                     playerData.hand.forEach(cardValue => {
@@ -1131,33 +1111,123 @@
                 }
                 
                 // Check if this player is a winner
-                const isWinner = playerData.handRank && 
-                                 compareRanks([playerData.handRank[0], playerData.handRank[1], playerData.handRank[2], 
-                                             playerData.handRank[3], playerData.handRank[4], playerData.handRank[5]], 
-                                            highestRank) === 0;
-                
-                if (isWinner) {
+                if (playerData.winner) {
+                    // Add winner class to highlight the entire player spot
                     spot.classList.add('winner');
+                    
+                    // Make the player name stand out
+                    nameElement.style.color = 'gold';
+                    nameElement.style.fontWeight = 'bold';
+                    nameElement.textContent = `★ ${playerName} ★`;
                     
                     // Add winner indicator
                     const winnerLabel = document.createElement('div');
                     winnerLabel.className = 'winner-label';
                     winnerLabel.textContent = 'WINNER!';
                     spot.appendChild(winnerLabel);
+                    
+                    // Show pot amount won
+                    if (showdownData.pot) {
+                        const winningsLabel = document.createElement('div');
+                        winningsLabel.className = 'winnings-label';
+                        winningsLabel.textContent = `Won $${showdownData.pot}`;
+                        winningsLabel.style.color = '#4ade80';
+                        winningsLabel.style.fontWeight = 'bold';
+                        winningsLabel.style.marginTop = '5px';
+                        spot.appendChild(winningsLabel);
+                    }
                 }
             });
             
-            // Update game status
-            gameStatus.textContent = 'Showdown - Winner determined!';
+            // Update game status with the winner message
+            if (showdownData.winnerMessage) {
+                gameStatus.textContent = showdownData.winnerMessage;
+            } else {
+                gameStatus.textContent = 'Showdown - Winner determined!';
+            }
         }
 
-        // Utility function to compare hand ranks
-        function compareRanks(rank1, rank2) {
-            for (let i = 0; i < 6; i++) {
-                if (rank1[i] > rank2[i]) return 1;
-                if (rank1[i] < rank2[i]) return -1;
+        // Add this function to show the drawing interface only when it's the player's turn
+        function showDrawingInterface() {
+            const drawingContainer = document.getElementById('drawingContainer');
+            if (drawingContainer) {
+                drawingContainer.style.display = 'block';
             }
-            return 0;
+        }
+
+        // Add this function to keep track of whose turn it is
+        function updatePlayerTurn(playerName) {
+            // Remove 'player-turn' class from all players
+            document.querySelectorAll('.player-turn').forEach(el => {
+                el.classList.remove('player-turn');
+            });
+            
+            // Find the player element by name and add the 'player-turn' class
+            const playerSpots = document.querySelectorAll('.player-spot');
+            for (const spot of playerSpots) {
+                const nameElement = spot.querySelector('.player-name');
+                if (nameElement && nameElement.textContent === playerName) {
+                    spot.classList.add('player-turn');
+                    break;
+                }
+            }
+            
+            // Update game status to show whose turn it is
+            const gameStatus = document.getElementById('gameStatus');
+            if (gameStatus) {
+                // Only update if the status isn't showing something more important
+                if (!gameStatus.textContent.includes('Winner') && 
+                    !gameStatus.textContent.includes('Showdown') &&
+                    !gameStatus.textContent.includes('Waiting for players')) {
+                    gameStatus.textContent = `${playerName}'s turn`;
+                }
+            }
+            
+            // Set a global variable for easy access
+            window.currentTurnPlayer = playerName;
+        }
+
+        // When player confirms card selection, send to server through the iframe messaging system
+        function submitCardSelection() {
+            if (selectedCards.length > 0) {
+                console.log("Submitting card selection:", selectedCards);
+                
+                // Create message for server
+                const drawMessage = {
+                    action: "DrawCards",
+                    data: {
+                        cardIndices: selectedCards
+                    }
+                };
+                
+                // Send using the existing postMessage system to parent
+                window.parent.postMessage({
+                    type: 'sendWebSocket',
+                    data: JSON.stringify(drawMessage)
+                }, '*');
+                
+                // Set flag to prevent multiple draws
+                drawingCompleted = true;
+                
+                // Hide the selection UI
+                hideCardSelectionUI();
+            } else {
+                // Player chose not to exchange any cards
+                const drawMessage = {
+                    action: "DrawCards",
+                    data: {
+                        cardIndices: []
+                    }
+                };
+                
+                window.parent.postMessage({
+                    type: 'sendWebSocket',
+                    data: JSON.stringify(drawMessage)
+                }, '*');
+                
+                drawingCompleted = true;
+                hideCardSelectionUI();
+            }
         }
     </script>
 </body>
