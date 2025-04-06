@@ -591,6 +591,24 @@
                         playerElement.classList.remove('player-folded');
                     }
                 }
+
+                // Check for disconnected status
+                if (player.disconnected) {
+                    const playerElement = playerElements[player.name];
+                    if (playerElement) {
+                        // Add disconnected visual treatment
+                        playerElement.classList.add('player-disconnected');
+                        
+                        // Add a disconnected indicator
+                        const disconnectedIndicator = document.createElement('div');
+                        disconnectedIndicator.className = 'disconnected-indicator';
+                        disconnectedIndicator.textContent = 'DISCONNECTED';
+                        playerElement.appendChild(disconnectedIndicator);
+                        
+                        // Also mark as folded for game mechanics
+                        playerElement.classList.add('player-folded');
+                    }
+                }
             });
             
             // Update player hands if available
