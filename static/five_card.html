@@ -359,6 +359,11 @@
             50% { opacity: 1; }
         }
 
+        @keyframes winner-bounce {
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.1); }
+        }
+
         .hand-type {
             font-size: 12px;
             background-color: rgba(0, 0, 0, 0.7);
@@ -1101,29 +1106,44 @@
             hideCardSelectionUI();
         }
 
-        // Add this function to handle showdown updates
         function handleShowdownData(data) {
             console.log('Showdown data received:', data);
-            showdownData = data.data;
+            
+            // Check if data is nested (common format issue)
+            if (data) {
+                showdownData = data;
+            }
+            
+            console.log('Processed showdown data:', showdownData);
             
             // Create and display the showdown UI
             displayShowdownResults();
             
             // If a winner message was provided, display it
-            if (data.winnerMessage) {
-                const gameStatus = document.getElementById('gameStatus');
-                gameStatus.textContent = data.winnerMessage;
+            if (data.winnerMessage || (showdownData && showdownData.winnerMessage)) {
+                const winnerMsg = data.winnerMessage || showdownData.winnerMessage;
+                gameStatus.textContent = winnerMsg;
             }
         }
 
-        // Function to display showdown results
         function displayShowdownResults() {
-            if (!showdownData || !showdownData.hands || !showdownData.hands.length) {
-                console.error("Invalid showdown data:", showdownData);
+            // Clear any existing winner indicators first
+            document.querySelectorAll('.winner-label, .winnings-label').forEach(el => el.remove());
+            document.querySelectorAll('.winner').forEach(el => el.classList.remove('winner'));
+            
+            if (!showdownData || !showdownData.hands) {
+                console.error("Invalid showdown data structure:", showdownData);
                 return;
             }
             
-            console.log("Displaying showdown results:", showdownData);
+            // Support different data structures (hands or players array)
+            const playerData = showdownData.hands || showdownData.players || [];
+            console.log("Displaying showdown results for players:", playerData);
+            
+            if (playerData.length === 0) {
+                console.error("No player data found in showdown results");
+                return;
+            }
             
             // Now reveal all cards and highlight winners
             const playerSpots = document.querySelectorAll('.player-spot');
@@ -1133,9 +1153,15 @@
                 if (!nameElement) return;
                 
                 const playerName = nameElement.textContent;
-                const playerData = showdownData.hands.find(h => h.playerName === playerName);
+                // Find player by name or playerName property
+                const player = playerData.find(p => 
+                    (p.playerName === playerName) || (p.name === playerName)
+                );
                 
-                if (!playerData) return;
+                if (!player) {
+                    console.log(`No showdown data found for player: ${playerName}`);
+                    return;
+                }
                 
                 // Get the cards container
                 const cardsContainer = spot.querySelector('.player-cards');
@@ -1145,8 +1171,9 @@
                 cardsContainer.innerHTML = '';
                 
                 // Display all cards face up
-                if (playerData.hand && playerData.hand.length) {
-                    playerData.hand.forEach(cardValue => {
+                const hand = player.hand || [];
+                if (hand.length > 0) {
+                    hand.forEach(cardValue => {
                         const card = document.createElement('div');
                         card.className = `card ${getCardColor(cardValue)}`;
                         card.textContent = cardToString(cardValue);
@@ -1154,8 +1181,10 @@
                     });
                 }
                 
-                // Check if this player is a winner
-                if (playerData.winner) {
+                // Check if this player is a winner (support both winner and isWinner properties)
+                if (player.winner === true || player.isWinner === true) {
+                    console.log(`Marking player ${playerName} as winner`);
+                    
                     // Add winner class to highlight the entire player spot
                     spot.classList.add('winner');
                     
@@ -1171,10 +1200,11 @@
                     spot.appendChild(winnerLabel);
                     
                     // Show pot amount won
-                    if (showdownData.pot) {
+                    const potAmount = showdownData.pot || 0;
+                    if (potAmount > 0) {
                         const winningsLabel = document.createElement('div');
                         winningsLabel.className = 'winnings-label';
-                        winningsLabel.textContent = `Won $${showdownData.pot}`;
+                        winningsLabel.textContent = `Won $${potAmount}`;
                         winningsLabel.style.color = '#4ade80';
                         winningsLabel.style.fontWeight = 'bold';
                         winningsLabel.style.marginTop = '5px';

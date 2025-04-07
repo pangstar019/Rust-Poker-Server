@@ -1196,6 +1196,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         println!("drawing round for player {}", player_name);
                                         tx.send(Message::text(r#"{"message": "Drawing Round"}"#)).unwrap();
                                         player.current_bet = 0; // reset attribute from betting round
+                                        lobby_guard.update_player_reference(&player).await;
                                         
                                         // Check if current player isn't folded
                                         if player.state != player::FOLDED {
@@ -1300,7 +1301,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         lobby_guard.turns_remaining -= 1;
                                         if lobby_guard.turns_remaining == 0 {
                                             // First determine winner(s) before creating showdown data
-                                            let winners = lobby_guard.showdown().await;
+                                            let (winners, num_winners) = lobby_guard.showdown().await;
                                             let showdown_data;
                                             {
                                                 // Display all players' hands to everyone
@@ -1328,13 +1329,14 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                                 } else {
                                                     "No winners determined".to_string()
                                                 };
+                                                let pot_share = lobby_guard.pot/(num_winners as i32);
                                                 
                                                 // Send all hands data to all players - using proper command format
                                                 showdown_data = serde_json::json!({
                                                     "command": "showdownHands",
                                                     "data": {
                                                         "hands": all_hands_data,
-                                                        "pot": lobby_guard.pot,
+                                                        "pot": pot_share,
                                                         "winnerMessage": winner_message
                                                     }
                                                 });
@@ -1627,6 +1629,8 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                 }
                                 DEAL_CARDS => {
                                     // Seven-card stud dealing logic
+                                    player.current_bet = 0;
+                                    lobby_guard.update_player_reference(&player);
                                     println!("DEALING CARDS to player {}", player.name.clone());
                                     if player.state != player::FOLDED {
                                         // Deal cards according to the rules of Seven Card Stud
@@ -1689,7 +1693,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                         }
                                         else if lobby_guard.deal_card_counter < 4 {
                                             lobby_guard.game_state = BETTING_ROUND;
-                                            let mut best_p_index ;
+                                            let best_p_index ;
                                             {
                                                 let players = lobby_guard.players.lock().await;
                                                 let mut best_hand = (-1, -1, -1, -1, -1, -1); // Initialize best hand tuple
@@ -1744,6 +1748,8 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     }
                                 }
                                 BRING_IN => {
+                                    player.current_bet = 0;
+                                    lobby_guard.update_player_reference(&player).await;
                                     lobby_guard.broadcast("Bring In stage".to_string()).await;
                                     
                                     let bring_in_amount = 15; // Standard bring-in amount
@@ -1855,6 +1861,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     
                                 }
                                 SHOWDOWN => {
+                                    player.current_bet = 0;
                                     tx.send(Message::text(r#"{"message": "Showdown"}"#)).unwrap();
                                     lobby_guard.turns_remaining -= 1; 
                                     if lobby_guard.turns_remaining == 0 {
@@ -1875,7 +1882,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                         update_players_hand(&lobby_guard).await;
                                         
                                         // Determine winner(s) and award pot
-                                        let winners = lobby_guard.showdown().await;
+                                        let (winners, num_winners) = lobby_guard.showdown().await;
     
                                         // reasign hands so ui doesnt ruin everything
                                         {
@@ -1918,12 +1925,13 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                                 "No winners determined".to_string()
                                             };
                                             
+                                            let pot_share = lobby_guard.pot/num_winners;
                                             // Send all hands data to all players - using proper command format
                                             showdown_data = serde_json::json!({
                                                 "command": "showdownHands",
                                                 "data": {
                                                     "hands": all_hands_data,
-                                                    "pot": lobby_guard.pot,
+                                                    "pot": pot_share,
                                                     "winnerMessage": winner_message
                                                 }
                                             });
@@ -2505,6 +2513,9 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                             } else {
                                                 "No winners determined".to_string()
                                             };
+
+                                            let num_winners = winners.len() as i32;
+                                            let pot_share = lobby_guard.pot/num_winners;
                                             
                                             // Send data to clients
                                             showdown_data = serde_json::json!({
@@ -2512,7 +2523,7 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                                 "data": {
                                                     "hands": all_hands_data,
                                                     "communityCards": lobby_guard.community_cards.clone(),
-                                                    "pot": lobby_guard.pot,
+                                                    "pot": pot_share,
                                                     "winnerMessage": winner_message
                                                 }
                                             });

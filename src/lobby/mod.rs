@@ -469,7 +469,7 @@ impl Lobby {
     /// 
     /// This function does not return a value. It updates the players' wallets and game statistics.
     /// It also handles the display of hands to active players.
-    pub async fn showdown(&self) -> Vec<String> {
+    pub async fn showdown(&self) -> (Vec<String>, i32) {
         let mut players = self.players.lock().await;
         let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
         let mut winning_players_names: Vec<String> = Vec::new();
@@ -516,7 +516,7 @@ impl Lobby {
                 }
             }
         }
-        winners
+        (winners, winning_player_count as i32)
     }
 
     pub async fn finished_game(&mut self) {
