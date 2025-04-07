@@ -1631,7 +1631,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                 DEAL_CARDS => {
                                     // Seven-card stud dealing logic
                                     player.current_bet = 0;
-                                    lobby_guard.update_player_reference(&player);
+                                    lobby_guard.update_player_reference(&player).await;
                                     println!("DEALING CARDS to player {}", player.name.clone());
                                     if player.state != player::FOLDED {
                                         // Deal cards according to the rules of Seven Card Stud
@@ -2684,7 +2684,7 @@ mod tests {
     fn test_get_hand_type_full_house() {
         let hand = vec![2, 15, 28, 45, 19]; // 3 Hearts, 3 Diamond, 3 Spade, 7 Club, 7 Diamond
         let result = get_hand_type(&hand);
-        assert_eq!(result, (6, 2, 2, 0, 0, 0)); // Full house with three of a kind and a pair
+        assert_eq!(result, (6, 2, 6, 0, 0, 0)); // Full house with three of a kind and a pair
     }
 
     #[test]
