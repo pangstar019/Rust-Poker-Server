@@ -521,6 +521,8 @@ impl Lobby {
         self.current_max_bet = 0;
         self.community_cards.lock().await.clear();
         self.turns_remaining = self.current_player_count;
+        self.deal_card_counter = 0;
+        self.betting_round_counter = 0;
         
         // Reset players' states and hands
         {
@@ -543,7 +545,6 @@ impl Lobby {
     
     pub async fn showdown_texas(&self) -> Vec<String> {
         let mut players = self.players.lock().await;
-        let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
         let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
         let mut winning_players_names: Vec<String> = Vec::new();
         let mut winning_hand = (-1, -1, -1, -1, -1, -1); // keeps track of current highest hand, could change when incrementing between players
