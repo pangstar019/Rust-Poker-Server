@@ -1196,6 +1196,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         println!("drawing round for player {}", player_name);
                                         tx.send(Message::text(r#"{"message": "Drawing Round"}"#)).unwrap();
                                         player.current_bet = 0; // reset attribute from betting round
+                                        lobby_guard.update_player_reference(&player).await;
                                         
                                         // Check if current player isn't folded
                                         if player.state != player::FOLDED {
@@ -1627,6 +1628,8 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                 }
                                 DEAL_CARDS => {
                                     // Seven-card stud dealing logic
+                                    player.current_bet = 0;
+                                    lobby_guard.update_player_reference(&player);
                                     println!("DEALING CARDS to player {}", player.name.clone());
                                     if player.state != player::FOLDED {
                                         // Deal cards according to the rules of Seven Card Stud
@@ -1689,7 +1692,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                         }
                                         else if lobby_guard.deal_card_counter < 4 {
                                             lobby_guard.game_state = BETTING_ROUND;
-                                            let mut best_p_index ;
+                                            let best_p_index ;
                                             {
                                                 let players = lobby_guard.players.lock().await;
                                                 let mut best_hand = (-1, -1, -1, -1, -1, -1); // Initialize best hand tuple
@@ -1744,6 +1747,8 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     }
                                 }
                                 BRING_IN => {
+                                    player.current_bet = 0;
+                                    lobby_guard.update_player_reference(&player).await;
                                     lobby_guard.broadcast("Bring In stage".to_string()).await;
                                     
                                     let bring_in_amount = 15; // Standard bring-in amount
@@ -1855,6 +1860,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     
                                 }
                                 SHOWDOWN => {
+                                    player.current_bet = 0;
                                     tx.send(Message::text(r#"{"message": "Showdown"}"#)).unwrap();
                                     lobby_guard.turns_remaining -= 1; 
                                     if lobby_guard.turns_remaining == 0 {
