@@ -79,6 +79,8 @@ pub struct Lobby {
     pub turns_remaining: i32,
     pub deal_card_counter: i32,
     pub betting_round_counter: i32,
+    pub small_blinds_done: bool,
+    pub big_blinds_done: bool,
 }
 
 impl Lobby {
@@ -121,6 +123,8 @@ impl Lobby {
             turns_remaining: 0,
             deal_card_counter: 0,
             betting_round_counter: 0,
+            small_blinds_done: false,
+            big_blinds_done: false,
 
         }
     }
@@ -521,6 +525,9 @@ impl Lobby {
         self.current_max_bet = 0;
         self.community_cards.lock().await.clear();
         self.turns_remaining = self.current_player_count;
+        self.deal_card_counter = 0;
+        self.small_blinds_done = false;
+        self.big_blinds_done = false;
         
         // Reset players' states and hands
         {
@@ -543,7 +550,6 @@ impl Lobby {
     
     pub async fn showdown_texas(&self) -> Vec<String> {
         let mut players = self.players.lock().await;
-        let players_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
         let mut winning_players: Vec<Player> = Vec::new(); // keeps track of winning players at the end, accounting for draws
         let mut winning_players_names: Vec<String> = Vec::new();
         let mut winning_hand = (-1, -1, -1, -1, -1, -1); // keeps track of current highest hand, could change when incrementing between players
@@ -652,7 +658,6 @@ impl Lobby {
         }
         winners
     }
-
     
     pub async fn update_db(&self) {
         // update the database with the new player stats
