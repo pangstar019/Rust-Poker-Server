@@ -642,8 +642,13 @@
                 playerSpot.classList.remove('player-folded');
                 
                 // Determine if this is the current player
-                const isCurrentPlayer = (playerData.playerName === currentPlayerName);
-                
+                // const isCurrentPlayer = (playerData.playerName === currentPlayerName);
+                                // Determine if this is the current player or a spectator (who can see all cards)
+                let isCurrentPlayer = (playerData.playerName === currentPlayerName);
+                if (isSpectator) {
+                    isCurrentPlayer = true;
+                }
+
                 // Create and add cards
                 hand.forEach((cardValue, index) => {
                     const card = document.createElement('div');
