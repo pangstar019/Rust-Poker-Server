@@ -1759,6 +1759,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     player.state = player::CALLED;
                                     lobby_guard.pot += bring_in_amount;
                                     lobby_guard.current_max_bet = bring_in_amount;
+                                    lobby_guard.update_player_reference(&player).await;
                                     
                                     // Update the player in the lobby
                                     lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].wallet = player.wallet;
