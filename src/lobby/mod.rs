@@ -446,6 +446,11 @@ impl Lobby {
             if player.state != player::FOLDED && player.state != player::ALL_IN {
                 active_count += 1;
             }
+            if self.game_type == SEVEN_CARD_STUD {
+                if player.state == player::ALL_IN {
+                    active_count += 1;
+                }
+            }
         }
         return active_count == 0 || active_count == 1;
     }
