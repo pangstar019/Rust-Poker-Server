@@ -659,6 +659,30 @@
           // Handle player list
           if (response.players) {
             console.log("Updating player list:", response);
+            // Check if current player is a spectator
+            const currentPlayerName = localStorage.getItem('currentPlayerName');
+            let spectators = response.spectators || [];
+            if (spectators) {
+                // Check if current player name is in the spectators list
+                isSpectator = spectators.some(spectator => 
+                    spectator.name === currentPlayerName
+                );
+            } else {
+                isSpectator = false;
+            }
+            console.log(`Player ${currentPlayerName} is ${isSpectator ? 'a spectator' : 'not a spectator'}`);
+
+            // Update UI based on spectator status
+            if (isSpectator) {
+              // If player is a spectator, disable ready button
+              readyButton.disabled = true;
+              readyButton.textContent = "Spectating";
+              readyButton.classList.add("disabled");
+            } else {
+              // Re-enable ready button if player is not a spectator
+              readyButton.disabled = false;
+              readyButton.classList.remove("disabled");
+            }
             updatePlayerList(response.players, response.spectators);
             // Check if all players are ready
             if(!gameActive) {
