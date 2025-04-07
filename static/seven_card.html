@@ -641,11 +641,8 @@
                 // Remove folded class if exists
                 playerSpot.classList.remove('player-folded');
                 
-                // Determine if this is the current player or a spectator (who can see all cards)
-                let isCurrentPlayer = (playerData.playerName === currentPlayerName);
-                if (isSpectator) {
-                    isCurrentPlayer = true;
-                }
+                // Determine if this is the current player
+                const isCurrentPlayer = (playerData.playerName === currentPlayerName);
                 
                 // Create and add cards
                 hand.forEach((cardValue, index) => {
@@ -653,17 +650,14 @@
                     
                     // In 7-card stud, handle face up vs face down cards
                     // Cards with values > 52 are face down
-                    const isFaceDown = cardValue > 52 && !isCurrentPlayer;
-                    const actualCardValue = isFaceDown ? cardValue - 53 : cardValue;
-                    
-                    if (isCurrentPlayer || cardValue <= 52) {
-                        // Show face up cards to everyone and all cards to current player/spectator
-                        card.className = `card ${getCardColor(actualCardValue)}`;
-                        card.textContent = cardToString(actualCardValue);
-                    } else {
-                        // Face down card for non-spectator others
+                    if (cardValue > 52) {
+                        // Face down card for everyone
                         card.className = 'card facedown';
                         card.textContent = '?';
+                    } else {
+                        // Face up card
+                        card.className = `card ${getCardColor(cardValue)}`;
+                        card.textContent = cardToString(cardValue);
                     }
                     
                     cardsContainer.appendChild(card);
