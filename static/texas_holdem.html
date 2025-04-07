@@ -277,6 +277,56 @@
             50% { transform: translateX(-50%) scale(1.1); }
         }
 
+        .spectator-list {
+            margin-top: 10px;
+            padding: 5px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+        
+        .spectator {
+            color: #666;
+            font-style: italic;
+            margin-left: 5px;
+        }
+
+        .player-hand.winner {
+            border: 2px solid gold;
+            background-color: rgba(255, 215, 0, 0.1);
+        }
+
+        .player-hand.folded {
+            opacity: 0.7;
+        }
+
+        .folded-card {
+            opacity: 0.5;
+        }
+
+        .spectator-list {
+            margin: 10px 0;
+            padding: 8px;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .spectator {
+            margin: 2px 0;
+            font-style: italic;
+            color: #666;
+        }
+
+        #pot-container, #turn-container {
+            margin: 10px 0;
+            padding: 8px;
+            background-color: #f0f8ff;
+            border: 1px solid #b0c4de;
+            border-radius: 4px;
+            display: flex;
+            justify-content: center;
+        }
+
         .winner {
             box-shadow: 0 0 20px gold;
             animation: winner-glow 1.5s infinite alternate;
@@ -323,6 +373,11 @@
         </div>
     </div>
 
+    <div id="spectators-container" class="spectator-list" style="display: none;">
+        <h3>Spectators:</h3>
+        <div id="spectators-list"></div>
+    </div>
+
     <script>
         // Debug element for troubleshooting
         const debug = document.getElementById('debug');
@@ -352,6 +407,9 @@
         const RAISED = 4;
         const ALL_IN = 5;
         const IN_GAME = 6;
+
+        // Add this variable at the top of your script section near other global variables
+        let isSpectator = false;
 
         // Store showdown data for reference
         let showdownData = null;
@@ -383,7 +441,7 @@
             if (event.data.type === 'updateGameInfo') {
                 updateGameInfo(event.data.data);
             } else if (event.data.type === 'updatePlayers') {
-                updatePlayers(event.data.data.players, event.data.data.gameActive);
+                updatePlayers(event.data.data.players, event.data.data.spectators, event.data.data.gameActive);
             } else if (event.data.type === 'startGame') {
                 startGame(event.data.data);
             } else if (event.data.type === 'showdownHands') {
@@ -394,7 +452,7 @@
 
         function handleCommand(data) {
             if (data.command === "updatePlayers") {
-                updatePlayers(data.data.players, data.data.gameActive);
+                updatePlayers(data.data.players, data.data.spectators, data.data.gameActive);
             } else if (data.command === "startGame") {
                 startGame(data.data);
             } else if (data.command === "updateGameInfo") {
@@ -504,7 +562,19 @@
         }
         
         // Update player information
-        function updatePlayers(players, gameActive) {
+        function updatePlayers(players, spectators, gameActive) {
+            // Check if the current player is a spectator
+            const currentPlayerName = localStorage.getItem('currentPlayerName');
+            if (spectators) {
+                // Check if current player name is in the spectators list
+                isSpectator = spectators.some(spectator => 
+                    spectator.name === currentPlayerName
+                );
+            } else {
+                isSpectator = false;
+            }
+            console.log("Is current player a spectator:", isSpectator);
+
             // Safety checks
             if (!players) {
                 console.log('Warning: players data is undefined');
@@ -655,7 +725,13 @@
                 const playerName = playerHand.playerName;
                 const hand = playerHand.hand || [];
                 const state = playerHand.state;
-                const isCurrentPlayer = (playerName === currentPlayerName);
+                let isCurrentPlayer = (playerName === currentPlayerName);
+                
+                // Allow spectators to see all cards
+                if (isSpectator) {
+                    isCurrentPlayer = true;
+                }
+                console.log("is current player: ", isCurrentPlayer);
                 
                 // Find the DOM element for this player
                 const playerElement = playerElements[playerName];
@@ -1157,6 +1233,234 @@
                 if (rank1[i] < rank2[i]) return -1;
             }
             return 0;
+        }
+
+        // Update the WebSocket message handler function to handle player list updates with spectators
+        socket.onmessage = function(event) {
+            // ...existing code...
+            
+            // Handle player list updates
+            if (data.players) {
+                updatePlayersList(data.players);
+                
+                // Display spectators if present
+                if (data.spectators && data.spectators.length > 0) {
+                    const spectatorsContainer = document.getElementById("spectators-container");
+                    const spectatorsList = document.getElementById("spectators-list");
+                    spectatorsList.innerHTML = "";
+                    
+                    data.spectators.forEach(spectator => {
+                        const spectatorElement = document.createElement("div");
+                        spectatorElement.className = "spectator";
+                        spectatorElement.textContent = spectator.name + " (Spectating)";
+                        spectatorsList.appendChild(spectatorElement);
+                    });
+                    
+                    spectatorsContainer.style.display = "block";
+                } else {
+                    document.getElementById("spectators-container").style.display = "none";
+                }
+            }
+            
+            // Update game state info for both players and spectators
+            if (data.gameState) {
+                updateGameState(data);
+            }
+            
+            // Update player hands if available
+            if (data.hands) {
+                updatePlayerHands(data.hands);
+            }
+            
+            // Process showdown hands for all users including spectators
+            if (data.type === "showdownHands") {
+                displayShowdownHands(data.hands, data.communityCards);
+            }
+            
+            // ...existing code...
+        };
+
+        // Ensure the updateGameState function shows data properly for spectators
+        function updateGameState(data) {
+            // ...existing game state update code...
+            
+            // Make sure pot is visible to all, including spectators
+            if (data.pot !== undefined) {
+                document.getElementById("pot-amount").textContent = data.pot;
+                document.getElementById("pot-container").style.display = "block";
+            }
+            
+            // Show current player turn to everyone including spectators
+            if (data.currentPlayerTurn) {
+                document.getElementById("current-turn").textContent = data.currentPlayerTurn;
+                document.getElementById("turn-container").style.display = "block";
+            }
+            
+            // Show community cards to everyone including spectators
+            if (data.communityCards && data.communityCards.length > 0) {
+                updateCommunityCards(data.communityCards);
+            }
+        }
+
+        // Modify the hand display function to work for spectators
+        function updatePlayerHands(hands) {
+            const handContainer = document.getElementById("players-hands");
+            handContainer.innerHTML = "";
+            
+            hands.forEach(playerData => {
+                const playerHandDiv = document.createElement("div");
+                playerHandDiv.className = "player-hand";
+                
+                // Add player name
+                const playerName = document.createElement("div");
+                playerName.className = "player-name";
+                playerName.textContent = playerData.playerName;
+                
+                // Add player state if known
+                if (playerData.state) {
+                    if (playerData.state === 1) {
+                        playerName.textContent += " (Folded)";
+                    } else if (playerData.state === 6) {
+                        playerName.textContent += " (All-In)";
+                    }
+                }
+                
+                playerHandDiv.appendChild(playerName);
+                
+                // Only display hole cards for the current player or at showdown
+                // Otherwise show face-down cards for other players
+                const cardsDiv = document.createElement("div");
+                cardsDiv.className = "cards";
+                
+                if (playerData.playerName === username || playerData.showCards) {
+                    // Player can see their own cards or cards that should be visible
+                    playerData.hand.forEach(card => {
+                        cardsDiv.appendChild(createCardElement(card));
+                    });
+                } else {
+                    // Show face-down cards for opponents
+                    for (let i = 0; i < 2; i++) {
+                        cardsDiv.appendChild(createCardElement(-1)); // -1 represents face down
+                    }
+                }
+                
+                playerHandDiv.appendChild(cardsDiv);
+                handContainer.appendChild(playerHandDiv);
+            });
+        }
+
+        // Create a function to display showdown hands for all players
+        function displayShowdownHands(hands, communityCards) {
+            // Update community cards display
+            if (communityCards) {
+                updateCommunityCards(communityCards);
+            }
+            
+            // Update all player hands with visible cards
+            const handContainer = document.getElementById("players-hands");
+            handContainer.innerHTML = "";
+            
+            hands.forEach(playerData => {
+                const playerHandDiv = document.createElement("div");
+                playerHandDiv.className = "player-hand";
+                
+                // Highlight winners
+                if (playerData.winner) {
+                    playerHandDiv.className += " winner";
+                }
+                
+                // Add player name and hand type if available
+                const playerName = document.createElement("div");
+                playerName.className = "player-name";
+                
+                let displayText = playerData.playerName;
+                
+                // Add hand name/type if available
+                if (playerData.handName) {
+                    displayText += " - " + playerData.handName;
+                }
+                
+                // Show folded status
+                if (playerData.state === 1) {
+                    displayText += " (Folded)";
+                    playerHandDiv.className += " folded";
+                }
+                
+                playerName.textContent = displayText;
+                playerHandDiv.appendChild(playerName);
+                
+                // Display cards (all cards are visible at showdown except folded players)
+                const cardsDiv = document.createElement("div");
+                cardsDiv.className = "cards";
+                
+                if (playerData.hand && playerData.state !== 1) {
+                    playerData.hand.forEach(card => {
+                        cardsDiv.appendChild(createCardElement(card));
+                    });
+                } else if (playerData.state === 1 && playerData.hand) {
+                    // For folded players, still show their cards at showdown
+                    playerData.hand.forEach(card => {
+                        const cardEl = createCardElement(card);
+                        cardEl.classList.add("folded-card");
+                        cardsDiv.appendChild(cardEl);
+                    });
+                }
+                
+                playerHandDiv.appendChild(cardsDiv);
+                handContainer.appendChild(playerHandDiv);
+            });
+        }
+
+        // Add this function to each game HTML file if not already present
+        function createCardElement(cardValue) {
+            const cardElement = document.createElement("div");
+            cardElement.className = "card";
+            
+            if (cardValue === -1 || cardValue > 52) {
+                // Face down card
+                cardElement.classList.add("card-back");
+                cardElement.textContent = "";
+            } else {
+                // Face up card
+                const rank = cardValue % 13;
+                const suit = Math.floor(cardValue / 13);
+                
+                // Determine rank text
+                let rankText;
+                if (rank === 0) {
+                    rankText = "A";
+                } else if (rank === 10) {
+                    rankText = "J";
+                } else if (rank === 11) {
+                    rankText = "Q";
+                } else if (rank === 12) {
+                    rankText = "K";
+                } else {
+                    rankText = (rank + 1).toString();
+                }
+                
+                // Determine suit symbol
+                let suitSymbol;
+                let suitClass;
+                if (suit === 0) {
+                    suitSymbol = "♥";
+                    suitClass = "hearts";
+                } else if (suit === 1) {
+                    suitSymbol = "♦";
+                    suitClass = "diamonds";
+                } else if (suit === 2) {
+                    suitSymbol = "♠";
+                    suitClass = "spades";
+                } else {
+                    suitSymbol = "♣";
+                    suitClass = "clubs";
+                }
+                
+                cardElement.classList.add(suitClass);
+                cardElement.innerHTML = `<div class="card-value">${rankText}</div><div class="card-suit">${suitSymbol}</div>`;
+            }
+            
+            return cardElement;
         }
     </script>
 </body>

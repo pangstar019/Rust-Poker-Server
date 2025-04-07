@@ -70,8 +70,8 @@ pub const SEVEN_CARD_STUD: i32 = 11;
 pub const TEXAS_HOLD_EM: i32 = 12;
 pub const NOT_SET: i32 = 13;
 
-pub const SMALL_BLIND: i32 = 5;
-pub const BIG_BLINDS: i32 = 10;
+const SMALL_BLIND: i32 = 5;
+const BIG_BLIND: i32 = 10;
 
 /// Deals cards to players in a 7 Card Stud game.
 /// The first two cards are face-down, the third card is face-up.
@@ -134,7 +134,8 @@ async fn deal_cards_7(lobby: &mut Lobby, round: usize) {
 /// This function does not return a value. It updates the players' hands and community cards, and displays them to active players.
 /// It also handles the display of hands to active players.
 pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
-    let mut community_cards = lobby.community_cards.lock().await;
+    let mut players = lobby.players.lock().await;
+    let players_tx = players.iter().filter(|p| p.state != player::FOLDED).map(|p| p.tx.clone()).collect::<Vec<_>>();
     match round {
         0 => {
             println!("dealing for round 0");
@@ -150,20 +151,20 @@ pub async fn deal_cards_texas(lobby: &mut Lobby, round: usize) {
         1 => {
             // for flop round, deals 3 community
             for _ in 0..3 {
-                community_cards.push(lobby.deck.deal());
+                lobby.community_cards.push(lobby.deck.deal());
             }
         }
         _ => {
             // any other round the same
-            community_cards.push(lobby.deck.deal());
+            lobby.community_cards.push(lobby.deck.deal());
         }
     }
-    // let players_tx = players.iter().filter(|p| p.state != player::FOLDED).map(|p| p.tx.clone()).collect::<Vec<_>>();
-    // let mut message = String::from("Community cards:\n");
-    // for (i, card) in community_cards.iter().enumerate() {
-    //     message.push_str(&format!("{}. {}\n", i + 1, translate_card(*card).await));
-    // }
-    // lobby.lobby_wide_send(players_tx.clone(), message).await;
+    let players_tx = players.iter().filter(|p| p.state != player::FOLDED).map(|p| p.tx.clone()).collect::<Vec<_>>();
+    let mut message = String::from("Community cards:\n");
+    for (i, card) in lobby.community_cards.iter().enumerate() {
+        message.push_str(&format!("{}. {}\n", i + 1, translate_card(*card).await));
+    }
+    lobby.lobby_wide_send(players_tx.clone(), message).await;
 }
 
 /// Handles the betting round for players in a poker game.
@@ -181,13 +182,11 @@ pub async fn betting_round(player: &mut Player, lobby: &mut tokio::sync::MutexGu
     let mut valid_action = true;
     let mut reset = false;
     let player_prev_bet = player.current_bet;
-    // println!("{}: player_prev_bet: {}", player.name, player_prev_bet);
     let current_max_bet = lobby.current_max_bet;
 
     match action {
         ClientMessage::Check => {
             println!("{}: check command received", player.name);
-            println!("DEBUG VALUES - player.current_bet={}, lobby.current_max_bet={}", player.current_bet, lobby.current_max_bet);
             // only check when there is no bet to call
             if lobby.current_max_bet == 0 {
                 player.tx.send(Message::text(r#"{"message": "Checked"}"#)).unwrap();
@@ -691,7 +690,7 @@ pub async fn update_players_hand(lobby: &Lobby) {
         
         // Create 7-card hand for evaluation
         let player_hand = if lobby.game_type == TEXAS_HOLD_EM {
-            let community_cards = lobby.community_cards.lock().await.clone();
+            let community_cards = lobby.community_cards.clone();
             [original_hole_cards.clone(), community_cards].concat() // make 7 cards
         } else {
             player.hand.clone()
@@ -981,6 +980,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         player_lobby_guard.setup_game().await;
                                     }
                                     player.state = player::IN_GAME;
+                                    player.current_bet = 0;
                                     break;
                                     
                                 }
@@ -1024,7 +1024,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                                         tx.send(Message::text(r#"{"message": "Ante Round"}"#)).unwrap();
                                         println!("ante round message sent to player: {}", player_name);
-                                        if player.wallet > 10 {
+                                        if player.wallet >= 10 {
                                             // Deduct ante from player wallet and add to pot
                                             player.wallet -= 10;
                                             player.games_played += 1;
@@ -1032,8 +1032,8 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                             lobby_guard.pot += 10;
                                         } else {
                                             // Not enough money, mark as folded
-                                            lobby_guard.update_player_state(&player_name, player::FOLDED).await;
                                             player.state = player::FOLDED;
+                                            lobby_guard.update_player_state(&player_name, player::FOLDED).await;
                                         }
                                         lobby_guard.turns_remaining -= 1;
                                         {
@@ -1458,6 +1458,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
 pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut player: Player, db: Arc<Database>) -> String {
     let player_name = player.name.clone();
     let player_lobby = player.lobby.clone();
+    let lobby_name = player_lobby.lock().await.name.clone();
     let tx = player.tx.clone();
     
     // Update player state through the lobby
@@ -1470,13 +1471,26 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
     
     println!("{} has joined lobby: {}", player_name, player_lobby.lock().await.name);
     player_lobby.lock().await.new_player_join().await;
-    
+
+
     // Add a delay of one second
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    // update player attribute from db
+    let stats = db.player_stats(&player_name).await;
+    if let Ok(stats) = stats {
+        player.wallet = stats.wallet;
+        player.games_played = stats.games_played;
+        player.games_won = stats.games_won;
+    } else {
+        tx.send(Message::text(r#"{"error": "Failed to retrieve wallet"}"#)).unwrap();
+        // add player to be deleted, then kick to server
+    }
     
     loop {
         match player.state {
             player::IN_LOBBY => {
+                println!("player {} is in lobby", player_name);
+
                 loop {
                     let result = {
                         // Get next message from the player's websocket
@@ -1492,7 +1506,6 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                             // Parse the incoming JSON message
                             let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
                             
-                            let lobby_name = player_lobby.lock().await.name.clone();
             
                             match client_msg {
                                 Ok(ClientMessage::Quit) => {
@@ -1538,14 +1551,19 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     player_lobby.lock().await.send_player_list().await;
                                 }
                                 Ok(ClientMessage::Ready) => {
-                                    // READY UP - through the lobby
-                                    player_lobby.lock().await.check_ready(player_name.clone()).await;
-                                    player_lobby.lock().await.send_player_list().await;
+                                        // READY UP - through the lobby
+                                        player_lobby.lock().await.check_ready(player_name.clone()).await;
+                                        player_lobby.lock().await.send_player_list().await;
                                 }
                                 Ok(ClientMessage::ShowStats) => {
                                     // Get and send player stats
                                     let stats = db.player_stats(&player_name).await;
+
                                     if let Ok(stats) = stats {
+                                        player.wallet = stats.wallet;
+                                        player.games_played = stats.games_played;
+                                        player.games_won = stats.games_won;
+                                        player_lobby.lock().await.update_player_reference(&player).await;
                                         let stats_json = serde_json::json!({
                                             "stats": {
                                                 "username": player_name,
@@ -1562,31 +1580,18 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                 Ok(ClientMessage::StartGame) => {
                                     // Start the game
                                     println!("player: {}, received start game", player.name.clone());
-                                    let mut started = false;
-                                    while !started {
-                                        if let Ok(mut player_lobby_guard) = player_lobby.try_lock() {
-                                            player_lobby_guard.turns_remaining -= 1;
-                                            println!("turns remaining: {}", player_lobby_guard.turns_remaining);
-                                            if player_lobby_guard.turns_remaining == 0 {
-                                                player_lobby_guard.setup_game().await;
-                                            }
-                                            player_lobby_guard.update_player_state(&player_name, player::IN_GAME).await;
-                                            player.state = player::IN_GAME;
-                                            started = true;
-                                        }
+                                    let mut player_lobby_guard = player_lobby.lock().await;
+                                    player_lobby_guard.turns_remaining -= 1;
+                                    println!("turns remaining: {}", player_lobby_guard.turns_remaining);
+                                    if player_lobby_guard.turns_remaining == 0 {
+                                        player_lobby_guard.setup_game().await;
                                     }
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                                    player.state = player::IN_GAME;
                                     break;
+                                    
                                 }
                                 _ => {
-                                    // Unsupported action in lobby: disregard
-                                    if let Ok(player_lobby_guard) = player_lobby.try_lock() {
-                                        if player_lobby_guard.game_state != JOINABLE{
-                                            break;
-                                        }
-                                    } else {
-                                        continue;
-                                    }
+                                    continue;
                                 }
                             }
                         }
@@ -1609,7 +1614,8 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                         if lobby_guard.current_player_turn == player_name {
                             match lobby_guard.game_state {
                                 JOINABLE => {
-                                    continue;
+                                    drop(lobby_guard);
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
                                 }
                                 START_OF_ROUND => {
                                     lobby_guard.first_betting_player = (lobby_guard.first_betting_player + 1) % lobby_guard.current_player_count;
@@ -2006,10 +2012,10 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
     println!("{} has joined lobby: {}", player_name, player_lobby.lock().await.name);
     player_lobby.lock().await.new_player_join().await;
 
+
     // Add a delay of one second
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    
-    // Load initial player stats from database
+    // update player attribute from db
     let stats = db.player_stats(&player_name).await;
     if let Ok(stats) = stats {
         player.wallet = stats.wallet;
@@ -2017,11 +2023,14 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
         player.games_won = stats.games_won;
     } else {
         tx.send(Message::text(r#"{"error": "Failed to retrieve wallet"}"#)).unwrap();
+        // add player to be deleted, then kick to server
     }
     
     loop {
         match player.state {
             player::IN_LOBBY => {
+                println!("player {} is in lobby", player_name);
+
                 loop {
                     let result = {
                         let mut rx = player.rx.lock().await;
@@ -2080,14 +2089,19 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                     player_lobby.lock().await.send_player_list().await;
                                 }
                                 Ok(ClientMessage::Ready) => {
-                                    // READY UP - through the lobby
-                                    player_lobby.lock().await.check_ready(player_name.clone()).await;
-                                    player_lobby.lock().await.send_player_list().await;
+                                        // READY UP - through the lobby
+                                        player_lobby.lock().await.check_ready(player_name.clone()).await;
+                                        player_lobby.lock().await.send_player_list().await;
                                 }
                                 Ok(ClientMessage::ShowStats) => {
                                     // Get and send player stats
                                     let stats = db.player_stats(&player_name).await;
+
                                     if let Ok(stats) = stats {
+                                        player.wallet = stats.wallet;
+                                        player.games_played = stats.games_played;
+                                        player.games_won = stats.games_won;
+                                        player_lobby.lock().await.update_player_reference(&player).await;
                                         let stats_json = serde_json::json!({
                                             "stats": {
                                                 "username": player_name,
@@ -2118,6 +2132,7 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                         }
                                     }
                                     break;
+                                    
                                 }
                                 _ => {
                                     continue;
