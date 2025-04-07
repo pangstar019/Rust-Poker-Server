@@ -1761,11 +1761,6 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     lobby_guard.current_max_bet = bring_in_amount;
                                     lobby_guard.update_player_reference(&player).await;
                                     
-                                    // Update the player in the lobby
-                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].wallet = player.wallet;
-                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].current_bet = player.current_bet;
-                                    lobby_guard.players.lock().await[lobby_guard.current_player_index as usize].state = player.state;
-                                    
                                     // Broadcast the bring-in action
                                     lobby_guard.broadcast(format!("{} has the lowest up card and pays the bring-in of {}", player_name, bring_in_amount)).await;
                                     
@@ -1835,6 +1830,7 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                             }
                                         }
                                     }
+                                    lobby_guard.update_player_reference(&player).await;
                                     lobby_guard.turns_remaining -= 1;
                                     println!("player {} finish turn", player_name);
                                     if lobby_guard.check_end_game().await {
