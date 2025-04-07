@@ -1775,6 +1775,10 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                 lobby::BETTING_ROUND => {
                                     println!("betting round current player {}", player_name);
                                     tx.send(Message::text(r#"{"message": "Betting Round"}"#)).unwrap();
+                                    // Add this debug logging to verify values
+                                    println!("Player {}: current_bet={}, lobby.current_max_bet={}", 
+                                    player_name, player.current_bet, lobby_guard.current_max_bet);
+
                                     // skip the player if they are folded or all in
                                     if player.state != player::FOLDED && player.state != player::ALL_IN {
                                         loop {
