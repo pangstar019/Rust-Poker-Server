@@ -2204,14 +2204,15 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                     player.current_bet = 0;
                                     
                                     if lobby_guard.deal_card_counter == 0 {
-                                        player.games_played += 1;
-                                        lobby_guard.update_player_reference(&player).await;
 
                                         // Pre-flop: Deal 2 hole cards to each player one by one
                                         if player.state != player::FOLDED {
                                             // Deal 2 hole cards to this player
                                             // player.games_played += 1; // Count this as a played game
                                             // lobby_guard.deal_cards_texas( 0, player).await;
+                                            
+                                            player.played_game = true;
+                                            lobby_guard.update_player_played_game(&player).await;
                                             player.hand.push(lobby_guard.deck.deal());
                                             player.hand.push(lobby_guard.deck.deal());
 
@@ -2266,6 +2267,8 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                 lobby::SMALL_AND_BIG_BLIND => {
                                     println!("Blinds round current player: {}", player_name);
                                     tx.send(Message::text(r#"{"message": "Blinds Round"}"#)).unwrap();
+                                    player.played_game = true;
+                                    lobby_guard.update_player_played_game(&player).await;
 
                                     if player.state != player::FOLDED || !player.disconnected {
                                         lobby_guard.send_lobby_game_info().await;
@@ -2469,6 +2472,8 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                         
                                         // Get winners before generating the UI data
                                         let winners = lobby_guard.showdown_texas().await;
+
+
                                         
                                         // Prepare showdown data with the original hands
                                         let showdown_data;
@@ -2532,8 +2537,16 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                 lobby::UPDATE_DB => {
                                     // Update player stats and wallets in database
                                     tx.send(Message::text(r#"{"message": "Game Ended"}"#)).unwrap();
+                                    if player.played_game {
+                                        player.games_played += 1;
+                                    }
+                                    if player.won_game{
+                                        player.games_won += 1;
+                                    }
+                                    lobby_guard.update_player_reference(&player).await;
                                     lobby_guard.turns_remaining -= 1;
                                     lobby_guard.get_next_player(false).await;
+
                                     if lobby_guard.turns_remaining == 0 {
                                         println!("player {} activating finished_game", player_name);
                                         lobby_guard.finished_game().await;

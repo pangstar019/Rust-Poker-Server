@@ -539,6 +539,8 @@ impl Lobby {
                 player.hand.clear();
                 player.current_bet = 0;
                 player.ready = false;
+                player.played_game = false;
+                player.won_game = false;
             }
         }
         for player_name in self.to_be_deleted.clone() {
@@ -653,6 +655,7 @@ impl Lobby {
                     winners.push(players[j].name.clone());
                     players[j].games_won += 1;
                     players[j].wallet += pot_share;
+                    players[j].won_game = true;
                     println!("Player {} wins {}!", players[j].name, pot_share);
                     println!("Player {} wallet: {}", players[j].name, players[j].wallet);
                 }
@@ -695,6 +698,15 @@ impl Lobby {
         let mut players = self.players.lock().await;
         if let Some(player) = players.iter_mut().find(|p| p.name == player_name) {
             player.state = new_state;
+            return true;
+        }
+        false
+    }
+
+    pub async fn update_player_played_game(&mut self, player_ref: &Player) -> bool {
+        let mut players = self.players.lock().await;
+        if let Some(player) = players.iter_mut().find(|p| p.name == player_ref.name) {
+            player.played_game = true;
             return true;
         }
         false
