@@ -685,7 +685,7 @@
             const playerName = localStorage.getItem('currentPlayerName');
             playerTurn = (response.gameInfo.currentPlayerTurn === playerName);
             const game_state = response.gameInfo.gameState;
-            isBettingRound = (game_state == 14 || game_state == 15 || game_state == 16);
+            isBettingRound = (game_state == 14 || game_state == 15 || game_state == 16 || game_state == 19);
 
             console.log("Player turn:", playerTurn, "Is betting round:", isBettingRound);
             

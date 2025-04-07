@@ -79,6 +79,8 @@ pub struct Lobby {
     pub turns_remaining: i32,
     pub deal_card_counter: i32,
     pub betting_round_counter: i32,
+    pub small_blinds_done: bool,
+    pub big_blinds_done: bool,
 }
 
 impl Lobby {
@@ -121,6 +123,8 @@ impl Lobby {
             turns_remaining: 0,
             deal_card_counter: 0,
             betting_round_counter: 0,
+            small_blinds_done: false,
+            big_blinds_done: false,
 
         }
     }

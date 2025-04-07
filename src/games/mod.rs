@@ -70,6 +70,9 @@ pub const SEVEN_CARD_STUD: i32 = 11;
 pub const TEXAS_HOLD_EM: i32 = 12;
 pub const NOT_SET: i32 = 13;
 
+const SMALL_BLIND: i32 = 5;
+const BIG_BLIND: i32 = 10;
+
 /// Deals cards to players in a 7 Card Stud game.
 /// The first two cards are face-down, the third card is face-up.
 /// The last card is face-down.
@@ -981,6 +984,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         player_lobby_guard.setup_game().await;
                                     }
                                     player.state = player::IN_GAME;
+                                    player.current_bet = 0;
                                     break;
                                     
                                 }
@@ -2167,63 +2171,127 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                     lobby_guard.send_lobby_game_info().await;
                                 }
                                 lobby::SMALL_AND_BIG_BLIND => {
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                                    println!("Adding Small and Big Blind");
-                                    // Implement blinds logic directly in the state machine instead of calling the function
-                                    let big_blind = 10;
-                                    let small_blind = 5;
-                                    let mut names: Vec<String> = Vec::new();
-                                    
-                                    // Calculate small blind and big blind player indices
-                                    let small_blind_player_i = (lobby_guard.first_betting_player + 1) % lobby_guard.current_player_count;
-                                    let big_blind_player_i = (lobby_guard.first_betting_player + 2) % lobby_guard.current_player_count;
-                                    
-                                    // Apply blinds
-                                    // let players_tx;
-                                    {
-                                        let mut players = lobby_guard.players.lock().await;
+                                    println!("Blinds round current player: {}", player_name);
+                                    tx.send(Message::text(r#"{"message": "Blinds Round"}"#)).unwrap();
+
+                                    if player.state != player::FOLDED || !player.disconnected {
+                                        lobby_guard.send_lobby_game_info().await;
+                                        if !lobby_guard.big_blinds_done || !lobby_guard.small_blinds_done {
+                                            let mut blinds = 0;
+                                            if !lobby_guard.small_blinds_done {
+                                                blinds = SMALL_BLIND;
+                                                lobby_guard.turns_remaining += 1;
+                                            } else if !lobby_guard.big_blinds_done {
+                                                blinds = BIG_BLIND;
+                                            }
+                                            if player.wallet >= blinds {
+                                                player.wallet -= blinds;
+                                                player.current_bet = blinds;
+                                                lobby_guard.current_max_bet = blinds;
+                                                player.games_played += 1;
+                                                lobby_guard.update_player_reference(&player).await;
+                                                lobby_guard.pot += blinds;
+                                                if blinds == SMALL_BLIND {
+                                                    lobby_guard.small_blinds_done = true;
+                                                    println!("player {} put in small blind", player_name);
+                                                } else {
+                                                    lobby_guard.big_blinds_done = true;
+                                                    println!("player {} put in big blind", player_name);
+                                                }
+
+                                            } else {
+                                                player.state = player::FOLDED;
+                                                lobby_guard.update_player_state(&player_name, player::FOLDED).await;
+                                            }
+                                        } else {
+                                            loop {
+                                                let result = {
+                                                    // Get next message from the player's websocket
+                                                    let mut rx = player.rx.lock().await;
+                                                    match rx.next().await {
+                                                        Some(res) => res,
+                                                        None => continue,
+                                                    }
+                                                };
+    
+                                                if let Ok(msg) = result {
+                                                    if let Ok(text) = msg.to_str() {
+                                                        // Parse the incoming JSON message
+                                                        let client_msg: JsonResult<ClientMessage> = serde_json::from_str(text);
+                                                        match client_msg {
+                                                            Ok(ClientMessage::Disconnect) => {
+                                                                /*
+                                                                Add current player into to-be-rmoved list and keep their player reference active within the players vector
+                                                                
+                                                                
+                                                                 */
+    
+    
+                                                                // // Player disconnected entirely
+                                                                // let lobby_status = player_lobby.lock().await.remove_player(player_name.clone()).await;
+                                                                // if lobby_status == lobby::GAME_LOBBY_EMPTY {
+                                                                //     lobby_guard.remove_lobby(lobby_name.clone()).await;
+                                                                // } else {
+                                                                //     lobby_guard.update_lobby_names_status(lobby_name).await;
+                                                                // }
+                                                                // lobby_guard.broadcast_player_count().await;
+                                                                // lobby_guard.send_lobby_info().await;
+                                                                // lobby_guard.send_player_list().await;
                                         
-                                        // Small blind
-                                        let small_blind_player = &mut players[small_blind_player_i as usize];
-                                        small_blind_player.wallet -= small_blind;
-                                        small_blind_player.current_bet = small_blind; // Set directly instead of adding
-                                        small_blind_player.state = player::CALLED;
-                                        names.push(small_blind_player.name.clone());
-                                        println!("Small blind player ({}) current bet: {}", small_blind_player.name, small_blind_player.current_bet);
-                                        
-                                        // Big blind
-                                        let big_blind_player = &mut players[big_blind_player_i as usize];
-                                        big_blind_player.wallet -= big_blind;
-                                        big_blind_player.current_bet = big_blind; // Set directly instead of adding
-                                        big_blind_player.state = player::CALLED;
-                                        names.push(big_blind_player.name.clone());
-                                        println!("Big blind player ({}) current bet: {}", big_blind_player.name, big_blind_player.current_bet);
-                                    }
-                                    
-                                    // Update pot and max bet after players lock is dropped
-                                    lobby_guard.pot += small_blind + big_blind;
-                                    lobby_guard.current_max_bet = big_blind;
-                                    
-                                    // Send message to players
-                                    // lobby_guard.lobby_wide_send(players_tx, format!("{} has paid the small blind of {}\n{} has paid the big blind of {}", 
-                                    //     names[0], small_blind, names[1], big_blind)).await;
-                                    
-                                    // Debug current bets before state change
-                                    {
-                                        let players = lobby_guard.players.lock().await;
-                                        for player in players.iter() {
-                                            println!("Before DEAL_CARDS - Player {} bet: {}", player.name, player.current_bet);
+                                                                // lobby_guard.remove_player(player_name.clone()).await;
+                                                                // lobby_guard.broadcast_player_count().await;
+                                                                
+                                                                // // Update player stats from database
+                                                                // if let Err(e) = db.update_player_stats(&player).await {
+                                                                //     eprintln!("Failed to update player stats: {}", e);
+                                                                // }
+                                                                
+                                                                // return "Disconnect".to_string();
+                                                            }
+                                                            _ => {
+                                                                // pass in the players input and validate it (check, call, raise, fold, all in)
+                                                                if let Ok(action) = client_msg {
+                                                                    let (valid_action, reset) = betting_round(&mut player, &mut lobby_guard, action).await;
+                                                                    if valid_action {
+                                                                        println!("valid action");
+                                                                        // update the server lobby player reference with updated clone data
+                                                                        lobby_guard.update_player_reference(&player).await;
+                                                                        if reset {
+                                                                            println!("reseting turns remaining");
+                                                                            // reset the turns_remaining counter if the player raised
+                                                                            lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                                                        }
+                                                                        break;
+                                                                    }
+                                                                } else {
+                                                                    println!("Invalid client message received BAD, they try again");
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
-                                    
-                                    // Update the first betting player to be after the big blind
-                                    lobby_guard.get_next_player(false).await;
-                                    lobby_guard.get_next_player(false).await;
-                                    
-                                    // Transition to DEAL_CARDS state
-                                    lobby_guard.game_state = lobby::DEAL_CARDS;
-                                    
-                                    // Send updated game information without resetting bets
+                                    lobby_guard.turns_remaining -= 1;
+                                    println!("player {} finish turn", player_name);
+                                    if lobby_guard.check_end_game().await {
+                                        lobby_guard.clear_betting().await;
+                                        player.current_bet = 0;
+                                        lobby_guard.game_state = lobby::SHOWDOWN;
+                                    } else {
+                                        if lobby_guard.turns_remaining == 0 {
+                                            lobby_guard.game_state = lobby::DEAL_CARDS;
+                                            lobby_guard.turns_remaining = lobby_guard.current_player_count;
+                                            lobby_guard.clear_betting().await;
+                                            player.current_bet = 0;
+                                            lobby_guard.get_next_player(true).await;
+                                            println!("betting round finished, next player turn: {}", lobby_guard.current_player_turn);
+                                        } else {
+                                            lobby_guard.get_next_player(false).await;
+                                            println!("next player turn: {}", lobby_guard.current_player_turn);
+                                        }
+                                    }
                                     lobby_guard.send_lobby_game_info().await;
                                     lobby_guard.send_player_list().await;
                                 }

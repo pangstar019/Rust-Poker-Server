@@ -392,6 +392,9 @@
         const ALL_IN = 5;
         const IN_GAME = 6;
 
+        // Add this variable at the top of your script section near other global variables
+        let isSpectator = false;
+
         // Store showdown data for reference
         let showdownData = null;
         
@@ -422,7 +425,7 @@
             if (event.data.type === 'updateGameInfo') {
                 updateGameInfo(event.data.data);
             } else if (event.data.type === 'updatePlayers') {
-                updatePlayers(event.data.data.players, event.data.data.gameActive);
+                updatePlayers(event.data.data.players, event.data.data.spectators, event.data.data.gameActive);
             } else if (event.data.type === 'startGame') {
                 startGame(event.data.data);
             } else if (event.data.type === 'showdownHands') {
@@ -433,7 +436,7 @@
 
         function handleCommand(data) {
             if (data.command === "updatePlayers") {
-                updatePlayers(data.data.players, data.data.gameActive);
+                updatePlayers(data.data.players, data.data.spectators, data.data.gameActive);
             } else if (data.command === "startGame") {
                 startGame(data.data);
             } else if (data.command === "updateGameInfo") {
@@ -543,7 +546,19 @@
         }
         
         // Update player information
-        function updatePlayers(players, gameActive) {
+        function updatePlayers(players, spectators, gameActive) {
+            // Check if the current player is a spectator
+            const currentPlayerName = localStorage.getItem('currentPlayerName');
+            if (spectators) {
+                // Check if current player name is in the spectators list
+                isSpectator = spectators.some(spectator => 
+                    spectator.name === currentPlayerName
+                );
+            } else {
+                isSpectator = false;
+            }
+            console.log("Is current player a spectator:", isSpectator);
+
             // Safety checks
             if (!players) {
                 console.log('Warning: players data is undefined');
@@ -694,7 +709,13 @@
                 const playerName = playerHand.playerName;
                 const hand = playerHand.hand || [];
                 const state = playerHand.state;
-                const isCurrentPlayer = (playerName === currentPlayerName);
+                let isCurrentPlayer = (playerName === currentPlayerName);
+                
+                // Allow spectators to see all cards
+                if (isSpectator) {
+                    isCurrentPlayer = true;
+                }
+                console.log("is current player: ", isCurrentPlayer);
                 
                 // Find the DOM element for this player
                 const playerElement = playerElements[playerName];
