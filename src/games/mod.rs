@@ -2334,7 +2334,7 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                         lobby_guard.broadcast("Dealing the flop...".to_string()).await;
                                         for _ in 0..3 {
                                             let card = lobby_guard.deck.deal();
-                                            lobby_guard.community_cards.lock().await.push(card);
+                                            lobby_guard.community_cards.push(card);
                                         }
                                         // lobby_guard.deal_cards_texas(1 , player).await; // 1 = flop
                                     } else if lobby_guard.deal_card_counter > 1 && lobby_guard.deal_card_counter <= 3 {
@@ -2342,7 +2342,7 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                         lobby_guard.broadcast("Dealing the turn...".to_string()).await;
                                         // lobby_guard.deal_cards_texas(2 , player).await; // 1 = flop
                                         let card = lobby_guard.deck.deal();
-                                        lobby_guard.community_cards.lock().await.push(card);
+                                        lobby_guard.community_cards.push(card);
 
                                     }
                                     lobby_guard.deal_card_counter += 1;
@@ -2470,7 +2470,7 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                                 "command": "showdownHands",
                                                 "data": {
                                                     "hands": all_hands_data,
-                                                    "communityCards": lobby_guard.community_cards.lock().await.clone(),
+                                                    "communityCards": lobby_guard.community_cards.clone(),
                                                     "pot": lobby_guard.pot,
                                                     "winnerMessage": winner_message
                                                 }
