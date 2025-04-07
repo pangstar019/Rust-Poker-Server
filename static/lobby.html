@@ -658,8 +658,8 @@
 
           // Handle player list
           if (response.players) {
-            console.log("Updating player list:", response.players);
-            updatePlayerList(response.players);
+            console.log("Updating player list:", response);
+            updatePlayerList(response.players, response.spectators);
             // Check if all players are ready
             if(!gameActive) {
               checkAllPlayersReady(response.players);
@@ -763,7 +763,7 @@
         }
       }
 
-      function updatePlayerList(players) {
+      function updatePlayerList(players, spectators) {
         playerListElement.innerHTML = "";
 
         if (players.length === 0) {
@@ -781,7 +781,7 @@
         
         // Send player data to the game iframe
         console.log("Sending player data to game iframe:", players);
-        sendGameCommand("updatePlayers", { players: players, gameActive: gameActive });
+        sendGameCommand("updatePlayers", { players: players, spectators: spectators, gameActive: gameActive });
       }
       
       function checkAllPlayersReady(players) {

@@ -240,6 +240,56 @@
             background-color: #607D8B;
             color: white;
         }
+
+        .spectator-list {
+            margin-top: 10px;
+            padding: 5px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+        
+        .spectator {
+            color: #666;
+            font-style: italic;
+            margin-left: 5px;
+        }
+
+        .player-hand.winner {
+            border: 2px solid gold;
+            background-color: rgba(255, 215, 0, 0.1);
+        }
+
+        .player-hand.folded {
+            opacity: 0.7;
+        }
+
+        .folded-card {
+            opacity: 0.5;
+        }
+
+        .spectator-list {
+            margin: 10px 0;
+            padding: 8px;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .spectator {
+            margin: 2px 0;
+            font-style: italic;
+            color: #666;
+        }
+
+        #pot-container, #turn-container {
+            margin: 10px 0;
+            padding: 8px;
+            background-color: #f0f8ff;
+            border: 1px solid #b0c4de;
+            border-radius: 4px;
+            display: flex;
+            justify-content: center;
+        }
     </style>
 </head>
 <body>
@@ -550,91 +600,109 @@
         }
 
         // Update player hands
-        function updatePlayerHands(handsData) {
-            const currentPlayerName = localStorage.getItem('currentPlayerName');
+        function updatePlayerHands(playersData) {
+            const container = document.getElementById("players-hands");
+            container.innerHTML = "";
             
-            handsData.forEach(playerHand => {
-                const playerName = playerHand.name || playerHand.playerName;
-                const hand = playerHand.hand || [];
-                const state = playerHand.state;
-                const isCurrentPlayer = (playerName === currentPlayerName);
+            console.log("Updating player hands:", playersData);
+            
+            playersData.forEach(playerData => {
+                const playerDiv = document.createElement("div");
+                playerDiv.className = "player-hand";
                 
-                // Find the DOM element for this player
-                const playerElement = playerElements[playerName];
-                if (!playerElement) {
-                    console.log(`No DOM element found for player ${playerName}`);
-                    return;
-                }
+                // Create player name element
+                const nameElement = document.createElement("div");
+                nameElement.className = "player-name";
+                nameElement.textContent = playerData.playerName;
                 
-                // Get the cards container for this player
-                const cardsContainer = playerElement.querySelector('.player-cards');
-                if (!cardsContainer) return;
-                
-                // Clear existing cards
-                cardsContainer.innerHTML = '';
-                
-                // If player folded, show folded state
-                if (state === 1) { // FOLDED = 1
-                    const foldedDiv = document.createElement('div');
-                    foldedDiv.className = 'folded-indicator';
-                    foldedDiv.textContent = 'FOLDED';
-                    cardsContainer.appendChild(foldedDiv);
-                    playerElement.classList.add('player-folded');
-                    return;
-                }
-                
-                // Remove folded class if it exists
-                playerElement.classList.remove('player-folded');
-                
-                // Skip if hand is empty - don't show any cards
-                if (hand.length === 0) {
-                    return;
-                }
-                
-                // Create and add cards - 7 Card Stud specific
-                const maxCards = 7; // 7 Card Stud has max 7 cards
-                const cardCount = Math.min(hand.length, maxCards);
-                
-                for (let i = 0; i < cardCount; i++) {
-                    const card = document.createElement('div');
-                    
-                    // Add dealing animation only for the current player
-                    card.className = isCurrentPlayer ? 'card dealing' : 'card';
-                    
-                    // In 7 Card Stud, cards can be face-up or face-down
-                    // If card value is > 52, it's face down
-                    const cardValue = hand[i];
-                    const isFaceDown = cardValue > 52;
-                    const actualCardValue = isFaceDown ? cardValue - 53 : cardValue;
-                    
-                    if (isCurrentPlayer && !isFaceDown) {
-                        // Show card to the current player or if it's a face-up card
-                        card.textContent = cardToString(actualCardValue);
-                        card.dataset.cardValue = actualCardValue;
-                        card.classList.add(getCardColor(actualCardValue));
-                        
-                        // Only add face down class for non-current player's face down cards
-                        if (isFaceDown && !isCurrentPlayer) {
-                            card.classList.add('facedown');
-                        }
-                        
-                        // Remove dealing animation after it completes
-                        setTimeout(() => {
-                            card.classList.remove('dealing');
-                        }, 300 + (i * 100));
-                    } else {
-                        // For other players' face down cards
-                        if (isFaceDown) {
-                            card.classList.add('facedown');
-                        } else {
-                            card.textContent = cardToString(actualCardValue);
-                            card.dataset.cardValue = actualCardValue;
-                            card.classList.add(getCardColor(actualCardValue));
-                        }
+                // Add player state if available
+                if (playerData.state) {
+                    if (playerData.state === 1) {
+                        nameElement.textContent += " (Folded)";
+                        playerDiv.classList.add("folded");
+                    } else if (playerData.state === 6) {
+                        nameElement.textContent += " (All-In)";
                     }
-                    
-                    cardsContainer.appendChild(card);
                 }
+                
+                playerDiv.appendChild(nameElement);
+                
+                // Create cards container
+                const cardsDiv = document.createElement("div");
+                cardsDiv.className = "cards";
+                
+                // Handle card visibility based on whether it's the current user or others
+                if (playerData.playerName === username) {
+                    // Show all cards for the current player
+                    playerData.hand.forEach(card => {
+                        cardsDiv.appendChild(createCardElement(card));
+                    });
+                } else {
+                    // For other players, only show face-up cards (cards below 53)
+                    // In 7-card stud, the first two and last cards are face down (value > 52)
+                    playerData.hand.forEach(card => {
+                        if (card <= 52) {
+                            // Face up card, show it
+                            cardsDiv.appendChild(createCardElement(card));
+                        } else {
+                            // Face down card, show back
+                            cardsDiv.appendChild(createCardElement(-1)); // -1 represents face down
+                        }
+                    });
+                }
+                
+                playerDiv.appendChild(cardsDiv);
+                container.appendChild(playerDiv);
+            });
+        }
+
+        // Add a function to handle the showdown state
+        function displayShowdownHands(hands) {
+            const container = document.getElementById("players-hands");
+            container.innerHTML = "";
+            
+            hands.forEach(playerData => {
+                const playerDiv = document.createElement("div");
+                playerDiv.className = "player-hand";
+                
+                // Highlight winners
+                if (playerData.winner) {
+                    playerDiv.classList.add("winner");
+                }
+                
+                // Create player name with hand type
+                const nameElement = document.createElement("div");
+                nameElement.className = "player-name";
+                
+                let nameText = playerData.playerName;
+                if (playerData.handName) {
+                    nameText += " - " + playerData.handName;
+                }
+                
+                // Show folded status
+                if (playerData.state === 1) {
+                    nameText += " (Folded)";
+                    playerDiv.classList.add("folded");
+                }
+                
+                nameElement.textContent = nameText;
+                playerDiv.appendChild(nameElement);
+                
+                // Create cards container - at showdown all cards are visible
+                const cardsDiv = document.createElement("div");
+                cardsDiv.className = "cards";
+                
+                // All cards are visible at showdown
+                if (playerData.hand) {
+                    playerData.hand.forEach(card => {
+                        // Convert any face-down cards (>52) to their actual values
+                        const actualCard = card > 52 ? card - 53 : card;
+                        cardsDiv.appendChild(createCardElement(actualCard));
+                    });
+                }
+                
+                playerDiv.appendChild(cardsDiv);
+                container.appendChild(playerDiv);
             });
         }
 
@@ -779,6 +847,58 @@
                 if (rank1[i] < rank2[i]) return -1;
             }
             return 0;
+        }
+
+        // Add this function to each game HTML file if not already present
+        function createCardElement(cardValue) {
+            const cardElement = document.createElement("div");
+            cardElement.className = "card";
+            
+            if (cardValue === -1 || cardValue > 52) {
+                // Face down card
+                cardElement.classList.add("card-back");
+                cardElement.textContent = "";
+            } else {
+                // Face up card
+                const rank = cardValue % 13;
+                const suit = Math.floor(cardValue / 13);
+                
+                // Determine rank text
+                let rankText;
+                if (rank === 0) {
+                    rankText = "A";
+                } else if (rank === 10) {
+                    rankText = "J";
+                } else if (rank === 11) {
+                    rankText = "Q";
+                } else if (rank === 12) {
+                    rankText = "K";
+                } else {
+                    rankText = (rank + 1).toString();
+                }
+                
+                // Determine suit symbol
+                let suitSymbol;
+                let suitClass;
+                if (suit === 0) {
+                    suitSymbol = "♥";
+                    suitClass = "hearts";
+                } else if (suit === 1) {
+                    suitSymbol = "♦";
+                    suitClass = "diamonds";
+                } else if (suit === 2) {
+                    suitSymbol = "♠";
+                    suitClass = "spades";
+                } else {
+                    suitSymbol = "♣";
+                    suitClass = "clubs";
+                }
+                
+                cardElement.classList.add(suitClass);
+                cardElement.innerHTML = `<div class="card-value">${rankText}</div><div class="card-suit">${suitSymbol}</div>`;
+            }
+            
+            return cardElement;
         }
     </script>
 </body>

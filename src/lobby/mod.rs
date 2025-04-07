@@ -73,7 +73,7 @@ pub struct Lobby {
     pub first_betting_player: i32,
     pub game_type: i32,
     pub current_max_bet: i32,
-    pub community_cards: Arc<Mutex<Vec<i32>>>,
+    pub community_cards: Vec<i32>,
     pub current_player_turn: String,
     pub current_player_index: i32,
     pub turns_remaining: i32,
@@ -115,7 +115,7 @@ impl Lobby {
             game_db: SqlitePool::connect("sqlite://poker.db").await.unwrap(),
             game_type: lobby_type,
             current_max_bet: 0,
-            community_cards: Arc::new(Mutex::new(Vec::new())),
+            community_cards: Vec::new(),
             current_player_turn: "".to_string(),
             current_player_index: 0,
             turns_remaining: 0,
@@ -519,7 +519,7 @@ impl Lobby {
         self.game_state = JOINABLE;
         self.pot = 0;
         self.current_max_bet = 0;
-        self.community_cards.lock().await.clear();
+        self.community_cards.clear();
         self.turns_remaining = self.current_player_count;
         
         // Reset players' states and hands
@@ -757,12 +757,7 @@ impl Lobby {
             }
         });
         
-        let players = self.players.lock().await;
-        let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-        for tx in player_tx {
-            // Send lobby information to all players in the lobby
-            tx.send(Message::text(lobby_info.to_string())).unwrap();
-        }
+        self.broadcast(lobby_info.to_string()).await;
     }
     
     pub async fn send_lobby_game_info(&self){
@@ -772,17 +767,12 @@ impl Lobby {
                 "gameState": self.game_state,
                 "pot": self.pot,
                 "currentMaxBet": self.current_max_bet,
-                "communityCards": self.community_cards.lock().await.clone(),
+                "communityCards": self.community_cards.clone(),
                 "currentPlayerTurn": self.current_player_turn,
             }
         });
         
-        let players = self.players.lock().await;
-        let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-        for tx in player_tx {
-            // Send game information to all players in the lobby
-            tx.send(Message::text(game_info.to_string())).unwrap();
-        }
+        self.broadcast(game_info.to_string()).await;
     }
 
     /// Sends the current player list to the client with hand information.
@@ -790,6 +780,7 @@ impl Lobby {
         // Build player list with hands
         let player_info = self.get_player_names_and_status().await;
         let mut players = Vec::new();
+        let mut spectators = Vec::new();
         
         // Get all players with their hands
         {
@@ -816,19 +807,23 @@ impl Lobby {
                 }
             }
         }
+        {
+            // Get all spectators
+            let spectators_lock = self.spectators.lock().await;
+            for spectator in spectators_lock.iter() {
+                spectators.push(serde_json::json!({
+                    "name": spectator.name,
+                }));
+            }
+        }
         
         // Create JSON response
         let player_list = serde_json::json!({
             "players": players,
+            "spectators": spectators,
         });
 
-        let players = self.players.lock().await;
-        let player_tx = players.iter().map(|p| p.tx.clone()).collect::<Vec<_>>();
-        for tx in player_tx {
-            // Send player list to all players in the lobby
-            tx.send(Message::text(player_list.to_string())).unwrap();
-        }
-        println!("players list with hands sent");
+        self.broadcast(player_list.to_string()).await;
     }
     
     // Add this method to your Lobby impl
@@ -846,7 +841,7 @@ impl Lobby {
     // Also add this method to help with game reset
     pub async fn reset_game_for_new_round(&mut self) {
         // Clear the community cards
-        self.community_cards.lock().await.clear();
+        self.community_cards.clear();
         
         // Reset pot
         self.pot = 0;

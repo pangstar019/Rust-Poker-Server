@@ -493,10 +493,9 @@ async fn handle_server_lobby(player: Player, server_lobby: Arc<Mutex<Lobby>>, db
                                             // result = join_lobby(server_lobby.clone(), player_obj, db.clone()).await;
                                             result = games::seven_card_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
                                         }
-                                        // }
-                                        // lobby::TEXAS_HOLD_EM => {
-                                        //     result = games::texas_holdem_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
-                                        // }
+                                        lobby::TEXAS_HOLD_EM => {
+                                            result = games::texas_holdem_game_state_machine(server_lobby.clone(), player_obj, db.clone()).await;
+                                        }
                                         _ => {
                                             continue;
                                         }
@@ -585,6 +584,10 @@ async fn join_as_spectator(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: 
         r#"{{"message": "You are spectating lobby: {}. You can only observe until the game is over."}}"#,
         player_lobby.lock().await.name
     ))).unwrap();
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    player_lobby.lock().await.send_lobby_info().await;
+    player_lobby.lock().await.send_player_list().await;
     
     // Loop to handle spectator messages
     loop {
@@ -645,7 +648,7 @@ async fn join_as_spectator(server_lobby: Arc<Mutex<Lobby>>, player: Player, db: 
                     }
                     _ => {
                         // Send message that spectators have limited options
-                        tx.send(Message::text(r#"{"message": "Spectators can only observe the game. Type 'quit' to leave spectator mode."}"#)).unwrap();
+                        continue;
                     }
                 }
             }
