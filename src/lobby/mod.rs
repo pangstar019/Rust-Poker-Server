@@ -443,7 +443,7 @@ impl Lobby {
         let mut active_count = 0;
         let players = self.players.lock().await;
         for player in players.iter() {
-            if player.state != player::FOLDED && player.state != player::ALL_IN {
+            if player.state != player::FOLDED {
                 active_count += 1;
             }
         }
