@@ -685,7 +685,7 @@
             const playerName = localStorage.getItem('currentPlayerName');
             playerTurn = (response.gameInfo.currentPlayerTurn === playerName);
             const game_state = response.gameInfo.gameState;
-            isBettingRound = (game_state == 14 || game_state == 15 || game_state == 16);
+            isBettingRound = (game_state == 14 || game_state == 15 || game_state == 16 || game_state == 19);
 
             console.log("Player turn:", playerTurn, "Is betting round:", isBettingRound);
             
@@ -727,8 +727,8 @@
 
           // In your handleMessage function, add handling for showdownHands type
           if (response.command === "showdownHands") {
-            console.log("Showdown hands received:", response);
-            sendGameCommand("showdownHands", response);
+            console.log("Lobby received showdown data:", response);
+            sendGameCommand("showdownHands", response.data); // Make sure we're sending the nested data
           }
 
           // Inside your handleMessage function, add this condition

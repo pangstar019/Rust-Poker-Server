@@ -2113,19 +2113,14 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                             }
                                             player_lobby_guard.update_player_state(&player_name, player::IN_GAME).await;
                                             player.state = player::IN_GAME;
+                                            player.current_bet = 0;
                                             started = true;
                                         }
                                     }
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                                     break;
                                 }
                                 _ => {
-                                    // Check if game has started
-                                    if let Ok(player_lobby_guard) = player_lobby.try_lock() {
-                                        if player_lobby_guard.game_state != lobby::JOINABLE {
-                                            break;
-                                        }
-                                    }
+                                    continue;
                                 }
                             }
                         }
@@ -2153,7 +2148,6 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                             match lobby_guard.game_state {
                                 lobby::START_OF_ROUND => {
                                     println!("Starting new round");
-                                    lobby_guard.deck.shuffle();
                                     lobby_guard.game_state = lobby::SMALL_AND_BIG_BLIND;
                                     lobby_guard.turns_remaining = lobby_guard.current_player_count;
                                     lobby_guard.send_lobby_game_info().await;
@@ -2175,6 +2169,7 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                             if player.wallet >= blinds {
                                                 player.wallet -= blinds;
                                                 player.current_bet = blinds;
+                                                lobby_guard.current_max_bet = blinds;
                                                 player.games_played += 1;
                                                 lobby_guard.update_player_reference(&player).await;
                                                 lobby_guard.pot += blinds;
@@ -2283,14 +2278,8 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                     lobby_guard.send_player_list().await;
                                 }
                                 lobby::DEAL_CARDS => {
-                                    // If player doesn't have enough money to play then fold them
-                                    if player.wallet < 10 {
-                                        player.state = player::FOLDED;
-                                        lobby_guard.update_player_state(&player_name, player::FOLDED).await;
-                                        tx.send(Message::text(r#"{"message": "You have been folded due to insufficient funds"}"#)).unwrap();
-                                        continue;
-                                    }
                                     println!("DEALING CARDS to player {}, deal card counter {}", player_name, lobby_guard.deal_card_counter);
+                                    player.current_bet = 0;
                                     
                                     if lobby_guard.deal_card_counter == 0 {
                                         // Pre-flop: Deal 2 hole cards to each player one by one

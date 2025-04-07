@@ -276,6 +276,22 @@
             0%, 100% { transform: translateX(-50%) scale(1); }
             50% { transform: translateX(-50%) scale(1.1); }
         }
+
+        .winner {
+            box-shadow: 0 0 20px gold;
+            animation: winner-glow 1.5s infinite alternate;
+            z-index: 10;
+            position: relative;
+        }
+
+        @keyframes winner-glow {
+            from {
+                box-shadow: 0 0 10px gold;
+            }
+            to {
+                box-shadow: 0 0 25px gold, 0 0 40px gold;
+            }
+        }
     </style>
 </head>
 <body>
@@ -867,6 +883,12 @@
 
         // Handle showdown data
         function handleShowdownData(data) {
+            console.log('Showdown data received:', data);
+            if (data.hands) {
+                data.hands.forEach(hand => {
+                    console.log(`Player ${hand.playerName}: winner=${hand.winner}, hand=${hand.handName}`);
+                });
+            }
             if (!data || !data.hands) return;
             
             console.log('Showdown data received:', data);
@@ -955,11 +977,42 @@
                 if (isWinner) {
                     spot.classList.add('winner');
                     
-                    // Add winner indicator
+                    // Make the player name stand out
+                    const nameElement = spot.querySelector('.player-name');
+                    if (nameElement) {
+                        nameElement.style.color = 'gold';
+                        nameElement.style.fontWeight = 'bold';
+                        nameElement.textContent = `★ ${playerName} ★`;
+                    }
+                    
+                    // Add winner indicator with better visibility
                     const winnerLabel = document.createElement('div');
                     winnerLabel.className = 'winner-label';
                     winnerLabel.textContent = 'WINNER!';
+                    winnerLabel.style.color = 'gold';
+                    winnerLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                    winnerLabel.style.padding = '5px 10px';
+                    winnerLabel.style.borderRadius = '5px';
+                    winnerLabel.style.fontWeight = 'bold';
+                    winnerLabel.style.fontSize = '16px';
+                    winnerLabel.style.textShadow = '1px 1px 3px black';
+                    winnerLabel.style.zIndex = '100';
+                    winnerLabel.style.position = 'absolute';
+                    winnerLabel.style.top = '0';
+                    winnerLabel.style.left = '50%';
+                    winnerLabel.style.transform = 'translateX(-50%)';
                     spot.appendChild(winnerLabel);
+                    
+                    // Add pot amount won if available
+                    if (data.pot) {
+                        const winningsLabel = document.createElement('div');
+                        winningsLabel.className = 'winnings-label';
+                        winningsLabel.textContent = `Won $${data.pot}`;
+                        winningsLabel.style.color = '#4ade80';
+                        winningsLabel.style.fontWeight = 'bold';
+                        winningsLabel.style.marginTop = '5px';
+                        spot.appendChild(winningsLabel);
+                    }
                 }
             });
             
