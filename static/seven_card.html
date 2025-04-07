@@ -434,6 +434,20 @@
                 isSpectator = false;
             }
             console.log("Is current player a spectator:", isSpectator);
+
+            players.forEach(player => {
+                if (player.name == currentPlayerName) {
+                    // Find the player element for the current player
+                    const playerElement = playerElements[player.name];
+                    if (playerElement) {
+                        // Update the chips display for this player
+                        const chipsElement = playerElement.querySelector('.player-chips');
+                        if (chipsElement) {
+                            chipsElement.textContent = "$" + player.wallet;
+                        }
+                    }
+                }
+            });
             
             // Update player hands if we have hand data
             const handsData = players

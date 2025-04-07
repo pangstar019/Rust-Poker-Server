@@ -683,6 +683,15 @@
               readyButton.disabled = false;
               readyButton.classList.remove("disabled");
             }
+            let playerList = response.players || [];
+            playerList.forEach(player => {
+              if (player.name === currentPlayerName) {
+                gameState.playerChips = player.wallet;
+                console.log("Player chips updated:", gameState.playerChips);
+                document.getElementById("playerChips").textContent = "$" + gameState.playerChips;
+              }
+              
+            });
             updatePlayerList(response.players, response.spectators);
             // Check if all players are ready
             if(!gameActive) {

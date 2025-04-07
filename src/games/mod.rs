@@ -1096,6 +1096,7 @@ pub async fn five_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut p
                                         println!("betting round current player {}", player_name);
                                         // skip the player if they are folded or all in
                                         if player.state != player::FOLDED && player.state != player::ALL_IN {
+                                            lobby_guard.send_player_list().await;
                                             lobby_guard.send_lobby_game_info().await;
                                             loop {
                                                 let result = {
