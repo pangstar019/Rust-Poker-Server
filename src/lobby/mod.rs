@@ -81,6 +81,7 @@ pub struct Lobby {
     pub betting_round_counter: i32,
     pub small_blinds_done: bool,
     pub big_blinds_done: bool,
+    pub call_amount: i32,
 }
 
 impl Lobby {
@@ -125,7 +126,7 @@ impl Lobby {
             betting_round_counter: 0,
             small_blinds_done: false,
             big_blinds_done: false,
-
+            call_amount: 0,
         }
     }
 
@@ -442,7 +443,7 @@ impl Lobby {
         let mut active_count = 0;
         let players = self.players.lock().await;
         for player in players.iter() {
-            if player.state != player::FOLDED {
+            if player.state != player::FOLDED && player.state != player::ALL_IN {
                 active_count += 1;
             }
         }
@@ -725,7 +726,10 @@ impl Lobby {
         } else {
             self.current_player_index = (self.current_player_index + 1) % self.current_player_count;
         }
-        self.current_player_turn = self.players.lock().await[self.current_player_index as usize].name.clone();
+        let player = self.players.lock().await[self.current_player_index as usize].clone();
+        self.current_player_turn = player.name.clone();
+        self.call_amount = self.current_max_bet - player.current_bet;
+        println!("lobby call amount: {}", self.call_amount);
     }
     
     pub async fn update_player_hand(&mut self, player_name: &str, hand: Vec<i32>) {
@@ -758,7 +762,8 @@ impl Lobby {
                 "name": self.name,
                 "gameType": game_type,
                 "playerCount": player_count,
-                "maxPlayers": max_players
+                "maxPlayers": max_players,
+                "callAmount": self.call_amount,
             }
         });
         
@@ -774,6 +779,7 @@ impl Lobby {
                 "currentMaxBet": self.current_max_bet,
                 "communityCards": self.community_cards.clone(),
                 "currentPlayerTurn": self.current_player_turn,
+                "callAmount": self.call_amount,
             }
         });
         

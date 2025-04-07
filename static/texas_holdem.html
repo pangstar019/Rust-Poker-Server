@@ -1235,51 +1235,6 @@
             return 0;
         }
 
-        // Update the WebSocket message handler function to handle player list updates with spectators
-        socket.onmessage = function(event) {
-            // ...existing code...
-            
-            // Handle player list updates
-            if (data.players) {
-                updatePlayersList(data.players);
-                
-                // Display spectators if present
-                if (data.spectators && data.spectators.length > 0) {
-                    const spectatorsContainer = document.getElementById("spectators-container");
-                    const spectatorsList = document.getElementById("spectators-list");
-                    spectatorsList.innerHTML = "";
-                    
-                    data.spectators.forEach(spectator => {
-                        const spectatorElement = document.createElement("div");
-                        spectatorElement.className = "spectator";
-                        spectatorElement.textContent = spectator.name + " (Spectating)";
-                        spectatorsList.appendChild(spectatorElement);
-                    });
-                    
-                    spectatorsContainer.style.display = "block";
-                } else {
-                    document.getElementById("spectators-container").style.display = "none";
-                }
-            }
-            
-            // Update game state info for both players and spectators
-            if (data.gameState) {
-                updateGameState(data);
-            }
-            
-            // Update player hands if available
-            if (data.hands) {
-                updatePlayerHands(data.hands);
-            }
-            
-            // Process showdown hands for all users including spectators
-            if (data.type === "showdownHands") {
-                displayShowdownHands(data.hands, data.communityCards);
-            }
-            
-            // ...existing code...
-        };
-
         // Ensure the updateGameState function shows data properly for spectators
         function updateGameState(data) {
             // ...existing game state update code...
@@ -1300,53 +1255,6 @@
             if (data.communityCards && data.communityCards.length > 0) {
                 updateCommunityCards(data.communityCards);
             }
-        }
-
-        // Modify the hand display function to work for spectators
-        function updatePlayerHands(hands) {
-            const handContainer = document.getElementById("players-hands");
-            handContainer.innerHTML = "";
-            
-            hands.forEach(playerData => {
-                const playerHandDiv = document.createElement("div");
-                playerHandDiv.className = "player-hand";
-                
-                // Add player name
-                const playerName = document.createElement("div");
-                playerName.className = "player-name";
-                playerName.textContent = playerData.playerName;
-                
-                // Add player state if known
-                if (playerData.state) {
-                    if (playerData.state === 1) {
-                        playerName.textContent += " (Folded)";
-                    } else if (playerData.state === 6) {
-                        playerName.textContent += " (All-In)";
-                    }
-                }
-                
-                playerHandDiv.appendChild(playerName);
-                
-                // Only display hole cards for the current player or at showdown
-                // Otherwise show face-down cards for other players
-                const cardsDiv = document.createElement("div");
-                cardsDiv.className = "cards";
-                
-                if (playerData.playerName === username || playerData.showCards) {
-                    // Player can see their own cards or cards that should be visible
-                    playerData.hand.forEach(card => {
-                        cardsDiv.appendChild(createCardElement(card));
-                    });
-                } else {
-                    // Show face-down cards for opponents
-                    for (let i = 0; i < 2; i++) {
-                        cardsDiv.appendChild(createCardElement(-1)); // -1 represents face down
-                    }
-                }
-                
-                playerHandDiv.appendChild(cardsDiv);
-                handContainer.appendChild(playerHandDiv);
-            });
         }
 
         // Create a function to display showdown hands for all players

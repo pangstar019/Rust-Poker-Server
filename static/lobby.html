@@ -694,7 +694,7 @@
               responseDiv.innerText = "It's your turn!";
               
               // Update betting info
-              gameState.callAmount = response.gameInfo.currentMaxBet || 0;
+              gameState.callAmount = response.gameInfo.callAmount || 0;
               document.getElementById("callAmount").textContent = "$" + gameState.callAmount;
               
               // Show betting controls

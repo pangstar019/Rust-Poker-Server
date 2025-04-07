@@ -188,7 +188,7 @@ pub async fn betting_round(player: &mut Player, lobby: &mut tokio::sync::MutexGu
         ClientMessage::Check => {
             println!("{}: check command received", player.name);
             // only check when there is no bet to call
-            if lobby.current_max_bet == 0 {
+            if lobby.call_amount == 0 {
                 player.tx.send(Message::text(r#"{"message": "Checked"}"#)).unwrap();
                 player.state = player::CHECKED;
                 return (valid_action, reset);
@@ -2180,6 +2180,7 @@ pub async fn texas_holdem_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mu
                                                 lobby_guard.turns_remaining += 1;
                                             } else if !lobby_guard.big_blinds_done {
                                                 blinds = BIG_BLIND;
+                                                lobby_guard.turns_remaining += 1;
                                             }
                                             if player.wallet >= blinds {
                                                 player.wallet -= blinds;
