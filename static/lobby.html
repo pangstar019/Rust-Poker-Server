@@ -658,8 +658,8 @@
 
           // Handle player list
           if (response.players) {
-            console.log("Updating player list:", response.players);
-            updatePlayerList(response.players);
+            console.log("Updating player list:", response);
+            updatePlayerList(response.players, response.spectators);
             // Check if all players are ready
             if(!gameActive) {
               checkAllPlayersReady(response.players);
@@ -685,7 +685,7 @@
             const playerName = localStorage.getItem('currentPlayerName');
             playerTurn = (response.gameInfo.currentPlayerTurn === playerName);
             const game_state = response.gameInfo.gameState;
-            isBettingRound = (game_state == 14 || game_state == 15 || game_state == 16);
+            isBettingRound = (game_state == 14 || game_state == 15 || game_state == 16 || game_state == 19);
 
             console.log("Player turn:", playerTurn, "Is betting round:", isBettingRound);
             
@@ -727,8 +727,8 @@
 
           // In your handleMessage function, add handling for showdownHands type
           if (response.command === "showdownHands") {
-            console.log("Showdown hands received:", response);
-            sendGameCommand("showdownHands", response);
+            console.log("Lobby received showdown data:", response);
+            sendGameCommand("showdownHands", response.data); // Make sure we're sending the nested data
           }
 
           // Inside your handleMessage function, add this condition
@@ -763,7 +763,7 @@
         }
       }
 
-      function updatePlayerList(players) {
+      function updatePlayerList(players, spectators) {
         playerListElement.innerHTML = "";
 
         if (players.length === 0) {
@@ -781,7 +781,7 @@
         
         // Send player data to the game iframe
         console.log("Sending player data to game iframe:", players);
-        sendGameCommand("updatePlayers", { players: players, gameActive: gameActive });
+        sendGameCommand("updatePlayers", { players: players, spectators: spectators, gameActive: gameActive });
       }
       
       function checkAllPlayersReady(players) {
