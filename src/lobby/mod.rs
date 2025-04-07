@@ -527,6 +527,7 @@ impl Lobby {
         self.community_cards.clear();
         self.turns_remaining = self.current_player_count;
         self.deal_card_counter = 0;
+        self.betting_round_counter = 0;
         self.small_blinds_done = false;
         self.big_blinds_done = false;
         
