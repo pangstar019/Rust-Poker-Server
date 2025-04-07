@@ -2,3 +2,4 @@ target/
 debug/
 src/*.db
 *.lock
+src/poker.db
