@@ -1618,7 +1618,6 @@ pub async fn seven_card_game_state_machine(server_lobby: Arc<Mutex<Lobby>>, mut 
                                     tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
                                 }
                                 START_OF_ROUND => {
-                                    lobby_guard.first_betting_player = (lobby_guard.first_betting_player + 1) % lobby_guard.current_player_count;
                                     lobby_guard.game_state = DEAL_CARDS;
                                     lobby_guard.deck.shuffle(); // Shuffle the deck at the start of the round
                                     // Initialize turns counter for tracking player actions
